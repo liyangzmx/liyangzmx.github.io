@@ -2,11 +2,14 @@
 - [Composer产生VSync信](#composer产生vsync信)
 - [Vsync到SurfaceFlinger的传递](#vsync到surfaceflinger的传递)
 - [SurfaceFlinger分发事件到应用](#surfaceflinger分发事件到应用)
-- [应用对界面重绘](#应用对界面重绘)
-- [应用本地图形渲染](#应用本地图形渲染)
+- [Java层界面重绘](#java层界面重绘)
+  - [DecorView重绘](#decorview重绘)
   - [ThreadedRenderer.updateRootDisplayList()](#threadedrendererupdaterootdisplaylist)
-  - [ThreadedRenderer.syncAndDrawFrame()](#threadedrenderersyncanddrawframe)
-  - [SkiaPipeline::renderFrame()](#skiapipelinerenderframe)
+  - [DecorView子对象重绘](#decorview子对象重绘)
+  - [ColorDrawable重绘子View背景](#colordrawable重绘子view背景)
+- [Native层Canvas提交绘制请求](#native层canvas提交绘制请求)
+  - [Java层ThreadedRenderer.syncAndDrawFrame()执行绘制操作](#java层threadedrenderersyncanddrawframe执行绘制操作)
+  - [Native层Skia对SkiaPipeline::renderFrame()对界面执行渲染](#native层skia对skiapipelinerenderframe对界面执行渲染)
   - [SkSurface::flushAndSubmit()](#sksurfaceflushandsubmit)
 - [应用swapBuffer()提交窗口至SurfaceFlinger](#应用swapbuffer提交窗口至surfaceflinger)
 - [SurfaceFlinger合成窗口](#surfaceflinger合成窗口)
@@ -400,7 +403,7 @@ void NativeDisplayEventReceiver::dispatchVsync(nsecs_t timestamp, PhysicalDispla
     }
 ```
 
-## 应用对界面重绘
+## Java层界面重绘
 上文`mCallbackQueues`中存储的是应用中所有等待更新的层的回调, 类型是`TraversalRunnable`, 该类是在`ViewRootImpl.scheduleTraversals()`时通过`Choreographer.postCallback()`注册过来的, 其实现是:
 ```
 // frameworks/base/core/java/android/view/ViewRootImpl.java
@@ -454,7 +457,7 @@ public final class ViewRootImpl implements ViewParent,
 ```
 `mAttachInfo.mThreadRender`的类型显然是`ThreadedRenderer`, 此时应用开始渲染界面.
 
-## 应用本地图形渲染
+### DecorView重绘
 ```
 // frameworks/base/core/java/android/view/ThreadedRenderer.java
 public final class ThreadedRenderer extends HardwareRenderer {
@@ -535,6 +538,8 @@ public final class ThreadedRenderer extends HardwareRenderer {
             dispatchDraw(canvas);
             ... ...
 ```
+
+### DecorView子对象重绘
 可以看到绘制`DecorView`时, 会绘制其子控, 这里先说下继承关系:`View` -> `ViewGroup` -> `FrameLayout` -> `DecorView`, 那么此处调用的其实是`ViewGroup.dispatchDraw()`
 ``件:
 ```
@@ -612,6 +617,8 @@ public final class ThreadedRenderer extends HardwareRenderer {
         ... ...
     }
 ```
+
+### ColorDrawable重绘子View背景
 此时`renderNode`的类型为:`ColorDrawable`, 因此调用`ColorDrawable.draw()`:
 ```
 // frameworks/base/graphics/java/android/graphics/drawable/ColorDrawable.java
@@ -651,7 +658,9 @@ public abstract class BaseCanvas {
         nDrawRect(mNativeCanvasWrapper, left, top, right, bottom, paint.getNativeInstance());
     }
 ```
-到native:
+
+## Native层Canvas提交绘制请求
+`nDrawRect`在Native层的实现 是`CanvasJNI::drawRect`:
 ```
 // frameworks/base/libs/hwui/jni/android_graphics_Canvas.cpp
 static void drawRect(JNIEnv* env, jobject, jlong canvasHandle, jfloat left, jfloat top,
@@ -718,7 +727,7 @@ void* DisplayListData::push(size_t pod, Args&&... args) {
 ```
 此处的`this->push<DrawRect>()`直接插入了一条回调到`fBytes`中, 这些记录将在`DisplayListData::map()`执行时被调用.
 
-### ThreadedRenderer.syncAndDrawFrame()
+### Java层ThreadedRenderer.syncAndDrawFrame()执行绘制操作
 继续调用基类`HardwareRenderer`的`syncAndDrawFrame`方法:
 ```
 // frameworks/base/graphics/java/android/graphics/HardwareRenderer.java
@@ -808,7 +817,7 @@ bool SkiaOpenGLPipeline::draw(const Frame& frame, const SkRect& screenDirty, con
 }
 ```
 
-### SkiaPipeline::renderFrame()
+### Native层Skia对SkiaPipeline::renderFrame()对界面执行渲染
 在`SkiaPipeline::renderFrame()`中:
 这里的`renderFrame()`, 其属于父类, 因此::
 ```
