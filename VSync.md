@@ -1,148 +1,16 @@
-- [Canvas.drawRect()流程](#canvasdrawrect流程)
 - [App向SurfaceFlinger注册回调接口](#app向surfaceflinger注册回调接口)
 - [Composer产生VSync信](#composer产生vsync信)
 - [Vsync到SurfaceFlinger的传递](#vsync到surfaceflinger的传递)
 - [SurfaceFlinger分发事件到应用](#surfaceflinger分发事件到应用)
 - [应用对界面重绘](#应用对界面重绘)
 - [应用本地图形渲染](#应用本地图形渲染)
-  - [Canvas的绘制过程](#canvas的绘制过程)
+  - [ThreadedRenderer.updateRootDisplayList()](#threadedrendererupdaterootdisplaylist)
+  - [ThreadedRenderer.syncAndDrawFrame()](#threadedrenderersyncanddrawframe)
+  - [SkiaPipeline::renderFrame()](#skiapipelinerenderframe)
+  - [SkSurface::flushAndSubmit()](#sksurfaceflushandsubmit)
 - [应用swapBuffer()提交窗口至SurfaceFlinger](#应用swapbuffer提交窗口至surfaceflinger)
 - [SurfaceFlinger合成窗口](#surfaceflinger合成窗口)
 - [渲染引擎合成到Composer](#渲染引擎合成到composer)
-
-## Canvas.drawRect()流程
-```
-// frameworks/base/core/java/android/view/View.java
-    @CallSuper
-    public void draw(Canvas canvas) {
-        ... ...
-        if (drawLeft) {
-            ... ...
-            if (solidColor == 0) {
-                canvas.restoreUnclippedLayer(leftSaveCount, p);
-            } else {
-                canvas.drawRect(left, top, left + length, bottom, p);
-```
-为了引出`Canvas.drawRect()`:
-```
-// frameworks/base/graphics/java/android/graphics/Canvas.java
-public class Canvas extends BaseCanvas {
-    ... ...
-    public void drawRect(float left, float top, float right, float bottom, @NonNull Paint paint) {
-        super.drawRect(left, top, right, bottom, paint);
-    }
-```
-到父类:
-```
-// frameworks/base/graphics/java/android/graphics/BaseCanvas.java
-public abstract class BaseCanvas {
-    ... ...
-    public void drawRect(float left, float top, float right, float bottom, @NonNull Paint paint) {
-        throwIfHasHwBitmapInSwMode(paint);
-        nDrawRect(mNativeCanvasWrapper, left, top, right, bottom, paint.getNativeInstance());
-    }
-```
-到native:
-```
-// frameworks/base/libs/hwui/jni/android_graphics_Canvas.cpp
-static void drawRect(JNIEnv* env, jobject, jlong canvasHandle, jfloat left, jfloat top,
-                     jfloat right, jfloat bottom, jlong paintHandle) {
-    const Paint* paint = reinterpret_cast<Paint*>(paintHandle);
-    get_canvas(canvasHandle)->drawRect(left, top, right, bottom, *paint);
-}
-```
-`get_canvas()`返回的其实是`SkiaCanvas`类型, 因此继续调用`SkiaCanvas::drawRect()`:
-```
-// frameworks/base/libs/hwui/SkiaCanvas.cpp
-void SkiaCanvas::drawRect(float left, float top, float right, float bottom, const Paint& paint) {
-    if (CC_UNLIKELY(paint.nothingToDraw())) return;
-    applyLooper(&paint, [&](const SkPaint& p) {
-        mCanvas->drawRect({left, top, right, bottom}, p);
-    });
-}
-```
-`mCanvas`类型为`SkCanvas`, 因此调用到`SkCanvas::drawRect()`:
-```
-// external/skia/src/core/SkCanvas.cpp
-void SkCanvas::drawRect(const SkRect& r, const SkPaint& paint) {
-    TRACE_EVENT0("skia", TRACE_FUNC);
-    // To avoid redundant logic in our culling code and various backends, we always sort rects
-    // before passing them along.
-    this->onDrawRect(r.makeSorted(), paint);
-}
-
-void SkCanvas::onDrawRect(const SkRect& r, const SkPaint& paint) {
-    ... ...
-    this->topDevice()->drawRect(r, layer.paint());
-}
-```
-`this->topDevice()`得到的是`SkGpuDevice`, 因此此时调用的是`SkGpuDevice::drawRect()`:
-```
-// external/skia/src/gpu/SkGpuDevice.cpp
-void SkGpuDevice::drawRect(const SkRect& rect, const SkPaint& paint) {
-    ... ...
-    fSurfaceDrawContext->drawRect(this->clip(), std::move(grPaint),
-                                  fSurfaceDrawContext->chooseAA(paint), this->localToDevice(), rect,
-                                  &style);
-}
-```
-`fSurfaceDrawContext`的类型是`GrSurfaceDrawContext`, 故`GrSurfaceDrawContext::drawRect()`
-```
-void GrSurfaceDrawContext::drawRect(const GrClip* clip,
-                                    GrPaint&& paint,
-                                    GrAA aa,
-                                    const SkMatrix& viewMatrix,
-                                    const SkRect& rect,
-                                    const GrStyle* style) {
-    ... ...
-    const SkStrokeRec& stroke = style->strokeRec();
-    if (stroke.getStyle() == SkStrokeRec::kFill_Style) {
-        ... ...
-    } else if ((stroke.getStyle() == SkStrokeRec::kStroke_Style ||
-                stroke.getStyle() == SkStrokeRec::kHairline_Style) &&
-               (rect.width() && rect.height())) {
-        ... ...
-        GrOp::Owner op = GrStrokeRectOp::Make(
-                fContext, std::move(paint), aaType, viewMatrix, rect, stroke);
-        if (op) {
-            this->addDrawOp(clip, std::move(op));
-            return;
-        }
-    }
-    ... ...
-}
-
-void GrSurfaceDrawContext::addDrawOp(const GrClip* clip,
-                                     GrOp::Owner op,
-                                     const std::function<WillAddOpFn>& willAddFn) {
-    ... ...
-    auto opsTask = this->getOpsTask();
-    opsTask->addDrawOp(this->drawingManager(), std::move(op), fixedFunctionFlags, analysis,
-                       std::move(appliedClip), dstProxyView,
-                       GrTextureResolveManager(this->drawingManager()), *this->caps());
-}
-```
-`this->getOpsTask()`得到的就是`GrOpsTask`, 因此:
-```
-// external/skia/src/gpu/GrOpsTask.cpp
-void GrOpsTask::addDrawOp(GrDrawingManager* drawingMgr, GrOp::Owner op,
-                          GrDrawOp::FixedFunctionFlags fixedFunctionFlags,
-                          const GrProcessorSet::Analysis& processorAnalysis, GrAppliedClip&& clip,
-                          const DstProxyView& dstProxyView,
-                          GrTextureResolveManager textureResolveManager, const GrCaps& caps) {
-    ... ...
-    this->recordOp(std::move(op), processorAnalysis, clip.doesClip() ? &clip : nullptr,
-                   &dstProxyView, caps);
-}
-
-void GrOpsTask::recordOp(
-        GrOp::Owner op, GrProcessorSet::Analysis processorAnalysis, GrAppliedClip* clip,
-        const DstProxyView* dstProxyView, const GrCaps& caps) {
-    ... ...
-    fOpChains.emplace_back(std::move(op), processorAnalysis, clip, dstProxyView);
-}
-```
-`fOpChains`记录了所有应该绘制的操作, 这些操作会在`GrOpsTask::execute()`时执行, 相应的操作流程将在本文后续内容介绍.
 
 ## App向SurfaceFlinger注册回调接口
 `DisplayEventReceiver`创建后, 其构造函数:
@@ -591,11 +459,266 @@ public final class ViewRootImpl implements ViewParent,
 // frameworks/base/core/java/android/view/ThreadedRenderer.java
 public final class ThreadedRenderer extends HardwareRenderer {
     void draw(View view, AttachInfo attachInfo, DrawCallbacks callbacks) {
+        attachInfo.mViewRootImpl.mViewFrameInfo.markDrawStart();
+
+        updateRootDisplayList(view, callbacks)
         ... ...
         int syncResult = syncAndDrawFrame(frameInfo);
         ... ...
     }
 ```
+### ThreadedRenderer.updateRootDisplayList()
+对于`updateRootDisplayList()`方法:
+```
+// frameworks/base/core/java/android/view/ThreadedRenderer.java
+    private void updateRootDisplayList(View view, DrawCallbacks callbacks) {
+        Trace.traceBegin(Trace.TRACE_TAG_VIEW, "Record View#draw()");
+        updateViewTreeDisplayList(view);
+        ... ...
+    }
+
+    private void updateViewTreeDisplayList(View view) {
+        view.mPrivateFlags |= View.PFLAG_DRAWN;
+        view.mRecreateDisplayList = (view.mPrivateFlags & View.PFLAG_INVALIDATED)
+                == View.PFLAG_INVALIDATED;
+        view.mPrivateFlags &= ~View.PFLAG_INVALIDATED;
+        view.updateDisplayListIfDirty();
+        view.mRecreateDisplayList = false;
+    }
+```
+对于`view`, 在窗口中, 其实现是:`DecorView`, 但此处调用的还是`View.updateDisplayListIfDirty`:
+```
+// frameworks/base/core/java/android/view/View.java
+    public RenderNode updateDisplayListIfDirty() {
+        final RenderNode renderNode = mRenderNode;
+        ... ...
+        if ((mPrivateFlags & PFLAG_DRAWING_CACHE_VALID) == 0
+                || !renderNode.hasDisplayList()
+                || (mRecreateDisplayList)) {
+            ... ...
+            try {
+                if (layerType == LAYER_TYPE_SOFTWARE) {
+                    ... ...
+                } else {
+                    ... ...
+                    if ((mPrivateFlags & PFLAG_SKIP_DRAW) == PFLAG_SKIP_DRAW) {
+                        ... ...
+                    } else {
+                        draw(canvas);
+                    }
+                }
+            }
+```
+此时调用父类的方法, 即`DecorView.draw()`:
+```
+// frameworks/base/core/java/com/android/internal/policy/DecorView.java
+    @Override
+    public void draw(Canvas canvas) {
+        super.draw(canvas);
+
+        if (mMenuBackground != null) {
+            mMenuBackground.draw(canvas);
+        }
+    }
+```
+又调回父类的`View.draw()`方法, 对`DecorView`进行绘制:
+```
+// frameworks/base/core/java/android/view/View.java
+    @CallSuper
+    public void draw(Canvas canvas) {
+        ... ...
+        if (!verticalEdges && !horizontalEdges) {
+            // Step 3, draw the content
+            onDraw(canvas);
+
+            // Step 4, draw the children
+            dispatchDraw(canvas);
+            ... ...
+```
+可以看到绘制`DecorView`时, 会绘制其子控, 这里先说下继承关系:`View` -> `ViewGroup` -> `FrameLayout` -> `DecorView`, 那么此处调用的其实是`ViewGroup.dispatchDraw()`
+``件:
+```
+// frameworks/base/core/java/android/view/ViewGroup.java
+    @Override
+    protected void dispatchDraw(Canvas canvas) {
+        final int childrenCount = mChildrenCount;
+        final View[] children = mChildren;
+        int flags = mGroupFlags;
+        ... ...
+        for (int i = 0; i < childrenCount; i++) {
+            ... ...
+            if ((child.mViewFlags & VISIBILITY_MASK) == VISIBLE || child.getAnimation() != null) {
+                more |= drawChild(canvas, child, drawingTime);
+            }
+        }
+        while (transientIndex >= 0) {
+            ... ...
+            if ((transientChild.mViewFlags & VISIBILITY_MASK) == VISIBLE ||
+                    transientChild.getAnimation() != null) {
+                more |= drawChild(canvas, transientChild, drawingTime);
+            }
+            ... ...
+        }
+        if (preorderedList != null) preorderedList.clear();
+
+        // Draw any disappearing views that have animations
+        if (mDisappearingChildren != null) {
+            ... ...
+            for (int i = disappearingCount; i >= 0; i--) {
+                final View child = disappearingChildren.get(i);
+                more |= drawChild(canvas, child, drawingTime);
+            }
+        }
+        ... ...
+    }
+
+    protected boolean drawChild(Canvas canvas, View child, long drawingTime) {
+        return child.draw(canvas, this, drawingTime);
+    }
+```
+此处`ViewGroup.drawChild()`将调用第一个子View的: `View.draw()` -> `View.drawBackground()`方法绘制背景:
+```
+// frameworks/base/core/java/android/view/View.java
+    @CallSuper
+    public void draw(Canvas canvas) {
+        final int privateFlags = mPrivateFlags;
+        mPrivateFlags = (privateFlags & ~PFLAG_DIRTY_MASK) | PFLAG_DRAWN;
+        int saveCount;
+        drawBackground(canvas);
+        ... ...
+    }
+
+    @UnsupportedAppUsage
+    private void drawBackground(Canvas canvas) {
+        ... ...
+        if (canvas.isHardwareAccelerated() && mAttachInfo != null
+                && mAttachInfo.mThreadedRenderer != null) {
+            mBackgroundRenderNode = getDrawableRenderNode(background, mBackgroundRenderNode);
+            ... ...
+        }
+        ... ...
+    }
+```
+注意, 这里`View.draw()`中的`drawBackground()`方法, 应用是不能自己调用的, 继续查看`getDrawableRenderNode()`方法:
+```
+// frameworks/base/core/java/android/view/View.java
+    private RenderNode getDrawableRenderNode(Drawable drawable, RenderNode renderNode) {
+        ... ...
+        try {
+            drawable.draw(canvas);
+        } finally {
+            renderNode.endRecording();
+        }
+        ... ...
+    }
+```
+此时`renderNode`的类型为:`ColorDrawable`, 因此调用`ColorDrawable.draw()`:
+```
+// frameworks/base/graphics/java/android/graphics/drawable/ColorDrawable.java
+    @Override
+    public void draw(Canvas canvas) {
+        final ColorFilter colorFilter = mPaint.getColorFilter();
+        if ((mColorState.mUseColor >>> 24) != 0 || colorFilter != null
+                || mBlendModeColorFilter != null) {
+            if (colorFilter == null) {
+                mPaint.setColorFilter(mBlendModeColorFilter);
+            }
+
+            mPaint.setColor(mColorState.mUseColor);
+            canvas.drawRect(getBounds(), mPaint);
+
+            // Restore original color filter.
+            mPaint.setColorFilter(colorFilter);
+        }
+    }
+```
+此时的`canvas`为类型`Canvas`因此查看`Canvas.drawRect()`的实现:
+```
+// frameworks/base/graphics/java/android/graphics/Canvas.java
+public class Canvas extends BaseCanvas {
+    ... ...
+    public void drawRect(float left, float top, float right, float bottom, @NonNull Paint paint) {
+        super.drawRect(left, top, right, bottom, paint);
+    }
+```
+到父类:
+```
+// frameworks/base/graphics/java/android/graphics/BaseCanvas.java
+public abstract class BaseCanvas {
+    ... ...
+    public void drawRect(float left, float top, float right, float bottom, @NonNull Paint paint) {
+        throwIfHasHwBitmapInSwMode(paint);
+        nDrawRect(mNativeCanvasWrapper, left, top, right, bottom, paint.getNativeInstance());
+    }
+```
+到native:
+```
+// frameworks/base/libs/hwui/jni/android_graphics_Canvas.cpp
+static void drawRect(JNIEnv* env, jobject, jlong canvasHandle, jfloat left, jfloat top,
+                     jfloat right, jfloat bottom, jlong paintHandle) {
+    const Paint* paint = reinterpret_cast<Paint*>(paintHandle);
+    get_canvas(canvasHandle)->drawRect(left, top, right, bottom, *paint);
+}
+```
+`get_canvas()`返回的其实是`SkiaCanvas`类型, 因此继续调用`SkiaCanvas::drawRect()`:
+```
+// frameworks/base/libs/hwui/SkiaCanvas.cpp
+void SkiaCanvas::drawRect(float left, float top, float right, float bottom, const Paint& paint) {
+    if (CC_UNLIKELY(paint.nothingToDraw())) return;
+    applyLooper(&paint, [&](const SkPaint& p) {
+        mCanvas->drawRect({left, top, right, bottom}, p);
+    });
+}
+
+// frameworks/base/libs/hwui/SkiaCanvas.h
+    template <typename Proc>
+    void applyLooper(const Paint* paint, Proc proc, void (*preFilter)(SkPaint&) = nullptr) {
+        ... ...
+        this->onFilterPaint(skp);
+        if (looper) {
+            ... ...
+        } else {
+            proc(skp);
+        }
+    }
+```
+直接调用`mCanvas->drawRect()`, 注意, 此处虽然`mCanvas`的类型是`SkCanvas`, 但其还有子类`RecordingCanvas`因此此处调用的是`RecordingCanvas::drawRect()`:
+```
+// frameworks/base/libs/hwui/RecordingCanvas.cpp
+void RecordingCanvas::onDrawRect(const SkRect& rect, const SkPaint& paint) {
+    fDL->drawRect(rect, paint);
+}
+```
+`fDL`的类型是`DisplayListData`, 因此此处调用:`DisplayListData::drawRect()`:
+```
+// frameworks/base/libs/hwui/RecordingCanvas.cpp
+void DisplayListData::drawRect(const SkRect& rect, const SkPaint& paint) {
+    this->push<DrawRect>(0, rect, paint);
+}
+
+template <typename T, typename... Args>
+void* DisplayListData::push(size_t pod, Args&&... args) {
+    size_t skip = SkAlignPtr(sizeof(T) + pod);
+    SkASSERT(skip < (1 << 24));
+    if (fUsed + skip > fReserved) {
+        static_assert(SkIsPow2(SKLITEDL_PAGE), "This math needs updating for non-pow2.");
+        // Next greater multiple of SKLITEDL_PAGE.
+        fReserved = (fUsed + skip + SKLITEDL_PAGE) & ~(SKLITEDL_PAGE - 1);
+        fBytes.realloc(fReserved);
+        LOG_ALWAYS_FATAL_IF(fBytes.get() == nullptr, "realloc(%zd) failed", fReserved);
+    }
+    SkASSERT(fUsed + skip <= fReserved);
+    auto op = (T*)(fBytes.get() + fUsed);
+    fUsed += skip;
+    new (op) T{std::forward<Args>(args)...};
+    op->type = (uint32_t)T::kType;
+    op->skip = skip;
+    return op + 1;
+}
+```
+此处的`this->push<DrawRect>()`直接插入了一条回调到`fBytes`中, 这些记录将在`DisplayListData::map()`执行时被调用.
+
+### ThreadedRenderer.syncAndDrawFrame()
 继续调用基类`HardwareRenderer`的`syncAndDrawFrame`方法:
 ```
 // frameworks/base/graphics/java/android/graphics/HardwareRenderer.java
@@ -664,7 +787,6 @@ nsecs_t CanvasContext::draw() {
 ```
 `mRenderPipeline`的类型是`SkiaOpenGLPipeline`, 注意它的基类是`SkiaPipeline`, 先看`SkiaOpenGLPipeline::draw()`;
 
-### Canvas的绘制过程
 在`SkiaOpenGLPipeline::draw()`时:
 ```
 // frameworks/base/libs/hwui/pipeline/skia/SkiaOpenGLPipeline.cpp
@@ -675,6 +797,9 @@ bool SkiaOpenGLPipeline::draw(const Frame& frame, const SkRect& screenDirty, con
                               const std::vector<sp<RenderNode>>& renderNodes,
                               FrameInfoVisualizer* profiler) {
     ... ...
+    renderFrame(*layerUpdateQueue, dirty, renderNodes, opaque, contentDrawBounds, surface,
+                SkMatrix::I());
+    ... ...
     {
         ATRACE_NAME("flush commands");
         surface->flushAndSubmit();
@@ -682,10 +807,263 @@ bool SkiaOpenGLPipeline::draw(const Frame& frame, const SkRect& screenDirty, con
     ... ...
 }
 ```
+
+### SkiaPipeline::renderFrame()
+在`SkiaPipeline::renderFrame()`中:
+这里的`renderFrame()`, 其属于父类, 因此::
+```
+// frameworks/base/libs/hwui/pipeline/skia/SkiaPipeline.cpp
+void SkiaPipeline::renderFrame(const LayerUpdateQueue& layers, const SkRect& clip,
+                               const std::vector<sp<RenderNode>>& nodes, bool opaque,
+                               const Rect& contentDrawBounds, sk_sp<SkSurface> surface,
+                               const SkMatrix& preTransform) {
+    ... ...
+    renderFrameImpl(clip, nodes, opaque, contentDrawBounds, canvas, preTransform);
+
+void SkiaPipeline::renderFrameImpl(const SkRect& clip,
+                                   const std::vector<sp<RenderNode>>& nodes, bool opaque,
+                                   const Rect& contentDrawBounds, SkCanvas* canvas,
+                                   const SkMatrix& preTransform) {
+    ... ...
+    if (1 == nodes.size()) {
+        if (!nodes[0]->nothingToDraw()) {
+            RenderNodeDrawable root(nodes[0].get(), canvas);
+            root.draw(canvas);
+        }
+    } else if (0 == nodes.size()) {
+        // nothing to draw
+    } else {
+        ... ...
+        RenderNodeDrawable contentNode(nodes[1].get(), canvas);
+        if (!backdrop.isEmpty()) {
+            ... ...
+            contentNode.draw(canvas);
+        } else {
+            SkAutoCanvasRestore acr(canvas, true);
+            contentNode.draw(canvas);
+        }
+        ... ...
+```
+这里分两种情况, 就是`nodes.size()`为`1`或者为`其它`(`0`不做任何操作), 我们先关注`contentNode.draw(canvas)`, 其中 `contentNode`是`RenderNodeDrawable`, 其`draw()`方法是父类的, 调用是会调回`RenderNodeDrawable::onDraw()`:
+```
+// frameworks/base/libs/hwui/pipeline/skia/RenderNodeDrawable.cpp
+void RenderNodeDrawable::onDraw(SkCanvas* canvas) {
+    ... ...
+    if ((!mInReorderingSection) || MathUtils::isZero(mRenderNode->properties().getZ())) {
+        this->forceDraw(canvas);
+    }
+}
+
+void RenderNodeDrawable::forceDraw(SkCanvas* canvas) const {
+    RenderNode* renderNode = mRenderNode.get();
+    ... ...
+    if (!properties.getProjectBackwards()) {
+        drawContent(canvas);
+        ... ...
+
+void RenderNodeDrawable::drawContent(SkCanvas* canvas) const {
+    RenderNode* renderNode = mRenderNode.get();
+    ... ...
+    if (!quickRejected) {
+        SkiaDisplayList* displayList = renderNode->getDisplayList().asSkiaDl();
+        const LayerProperties& layerProperties = properties.layerProperties();
+        // composing a hardware layer
+        if (renderNode->getLayerSurface() && mComposeLayer) {
+            ...
+        } else {
+            if (alphaMultiplier < 1.0f) {
+                // Non-layer draw for a view with getHasOverlappingRendering=false, will apply
+                // the alpha to the paint of each nested draw.
+                AlphaFilterCanvas alphaCanvas(canvas, alphaMultiplier);
+                displayList->draw(&alphaCanvas);
+            } else {
+                displayList->draw(canvas);
+            }
+        }
+    }
+```
+关注`displayList->draw(canvas)`的调用, 对应的是`SkiaDisplayList::draw()`:
+```
+// frameworks/base/libs/hwui/pipeline/skia/SkiaDisplayList.h
+class SkiaDisplayList {
+public:
+    void draw(SkCanvas* canvas) { mDisplayList.draw(canvas); }
+```
+`mDisplayList`的类型为`DisplayListData`, 因此调用`DisplayListData::draw()`:
+```
+// frameworks/base/libs/hwui/RecordingCanvas.cpp
+void DisplayListData::draw(SkCanvas* canvas) const {
+    SkAutoCanvasRestore acr(canvas, false);
+    this->map(draw_fns, canvas, canvas->getTotalMatrix());
+}
+
+template <typename Fn, typename... Args>
+inline void DisplayListData::map(const Fn fns[], Args... args) const {
+    auto end = fBytes.get() + fUsed;
+    for (const uint8_t* ptr = fBytes.get(); ptr < end;) {
+        auto op = (const Op*)ptr;
+        auto type = op->type;
+        auto skip = op->skip;
+        if (auto fn = fns[type]) {  // We replace no-op functions with nullptrs
+            fn(op, args...);        // to avoid the overhead of a pointless call.
+        }
+        ptr += skip;
+    }
+}
+```
+查看`draw_fns`的定义:
+```
+// All ops implement draw().
+#define X(T)                                                    \
+    [](const void* op, SkCanvas* c, const SkMatrix& original) { \
+        ((const T*)op)->draw(c, original);                      \
+    },
+static const draw_fn draw_fns[] = {
+#include "DisplayListOps.in"
+};
+#undef X
+```
+而在`DisplayListOps.in`中:
+```
+X(Flush)
+X(Save)
+X(Restore)
+X(SaveLayer)
+X(SaveBehind)
+X(Concat)
+X(SetMatrix)
+X(Scale)
+X(Translate)
+X(ClipPath)
+X(ClipRect)
+X(ClipRRect)
+X(ClipRegion)
+X(DrawPaint)
+X(DrawBehind)
+X(DrawPath)
+X(DrawRect)
+X(DrawRegion)
+X(DrawOval)
+X(DrawArc)
+X(DrawRRect)
+X(DrawDRRect)
+X(DrawAnnotation)
+X(DrawDrawable)
+X(DrawPicture)
+X(DrawImage)
+X(DrawImageRect)
+X(DrawImageLattice)
+X(DrawTextBlob)
+X(DrawPatch)
+X(DrawPoints)
+X(DrawVertices)
+X(DrawAtlas)
+X(DrawShadowRec)
+X(DrawVectorDrawable)
+X(DrawRippleDrawable)
+X(DrawWebView)
+```
+回顾上文的`DisplayListData::drawRect()`:
+// frameworks/base/libs/hwui/RecordingCanvas.cpp
+void DisplayListData::drawRect(const SkRect& rect, const SkPaint& paint) {
+    this->push<DrawRect>(0, rect, paint);
+}
+可以看到, 这里采用的是`X(DrawRect)`, 因此, 调用的方法为:`DrawRect::draw()`:
+```
+// frameworks/base/libs/hwui/RecordingCanvas.cpp
+struct DrawRect final : Op {
+    ... ...
+    void draw(SkCanvas* c, const SkMatrix&) const { c->drawRect(rect, paint); }
+};
+```
+调用到上文的`SkCanvas::drawRect()`:
+```
+// external/skia/src/core/SkCanvas.cpp
+void SkCanvas::drawRect(const SkRect& r, const SkPaint& paint) {
+    TRACE_EVENT0("skia", TRACE_FUNC);
+    // To avoid redundant logic in our culling code and various backends, we always sort rects
+    // before passing them along.
+    this->onDrawRect(r.makeSorted(), paint);
+}
+
+void SkCanvas::onDrawRect(const SkRect& r, const SkPaint& paint) {
+    ... ...
+    this->topDevice()->drawRect(r, layer.paint());
+}
+```
+`this->topDevice()`得到的是`SkGpuDevice`, 因此此时调用的是`SkGpuDevice::drawRect()`:
+```
+// external/skia/src/gpu/SkGpuDevice.cpp
+void SkGpuDevice::drawRect(const SkRect& rect, const SkPaint& paint) {
+    ... ...
+    fSurfaceDrawContext->drawRect(this->clip(), std::move(grPaint),
+                                  fSurfaceDrawContext->chooseAA(paint), this->localToDevice(), rect,
+                                  &style);
+}
+```
+`fSurfaceDrawContext`的类型是`GrSurfaceDrawContext`, 故`GrSurfaceDrawContext::drawRect()`
+```
+void GrSurfaceDrawContext::drawRect(const GrClip* clip,
+                                    GrPaint&& paint,
+                                    GrAA aa,
+                                    const SkMatrix& viewMatrix,
+                                    const SkRect& rect,
+                                    const GrStyle* style) {
+    ... ...
+    const SkStrokeRec& stroke = style->strokeRec();
+    if (stroke.getStyle() == SkStrokeRec::kFill_Style) {
+        ... ...
+    } else if ((stroke.getStyle() == SkStrokeRec::kStroke_Style ||
+                stroke.getStyle() == SkStrokeRec::kHairline_Style) &&
+               (rect.width() && rect.height())) {
+        ... ...
+        GrOp::Owner op = GrStrokeRectOp::Make(
+                fContext, std::move(paint), aaType, viewMatrix, rect, stroke);
+        if (op) {
+            this->addDrawOp(clip, std::move(op));
+            return;
+        }
+    }
+    ... ...
+}
+
+void GrSurfaceDrawContext::addDrawOp(const GrClip* clip,
+                                     GrOp::Owner op,
+                                     const std::function<WillAddOpFn>& willAddFn) {
+    ... ...
+    auto opsTask = this->getOpsTask();
+    opsTask->addDrawOp(this->drawingManager(), std::move(op), fixedFunctionFlags, analysis,
+                       std::move(appliedClip), dstProxyView,
+                       GrTextureResolveManager(this->drawingManager()), *this->caps());
+}
+```
+`this->getOpsTask()`得到的就是`GrOpsTask`, 因此:
+```
+// external/skia/src/gpu/GrOpsTask.cpp
+void GrOpsTask::addDrawOp(GrDrawingManager* drawingMgr, GrOp::Owner op,
+                          GrDrawOp::FixedFunctionFlags fixedFunctionFlags,
+                          const GrProcessorSet::Analysis& processorAnalysis, GrAppliedClip&& clip,
+                          const DstProxyView& dstProxyView,
+                          GrTextureResolveManager textureResolveManager, const GrCaps& caps) {
+    ... ...
+    this->recordOp(std::move(op), processorAnalysis, clip.doesClip() ? &clip : nullptr,
+                   &dstProxyView, caps);
+}
+
+void GrOpsTask::recordOp(
+        GrOp::Owner op, GrProcessorSet::Analysis processorAnalysis, GrAppliedClip* clip,
+        const DstProxyView* dstProxyView, const GrCaps& caps) {
+    ... ...
+    fOpChains.emplace_back(std::move(op), processorAnalysis, clip, dstProxyView);
+}
+```
+`fOpChains`记录了所有应该绘制的操作, 这些操作会在`GrOpsTask::execute()`时执行, 相应的操作流程将在本文后续内容介绍.
+
+### SkSurface::flushAndSubmit()
+在函数末尾的`surface->flushAndSubmit()`:
 `surface`的类型时`SkSurface`, 故此处调用`SkSurface::flushAndSubmit()`:
 ```
 // external/skia/src/image/SkSurface.cpp
-
 void SkSurface::flushAndSubmit(bool syncCpu) {
     this->flush(BackendSurfaceAccess::kNoAccess, GrFlushInfo());
 }
@@ -797,7 +1175,7 @@ bool GrOpsTask::onExecute(GrOpFlushState* flushState) {
         flushState->setOpArgs(nullptr);
     }
 ```
-此处开始依次执行每个`OpChain::head()`的`execute()`方法. 本文以`Canvas.drawRect()`为例, 因此此处的`GrOp`为`GrStrokeRectOp::Make()`所创建的`NonAAStrokeRectOp`, 其继承关系:`GrOp` -> `GrDrawOp` -> `GrMeshDrawOp` -> `NonAAStrokeRectOp`, 那么此时:
+此处开始依次执行每个`OpChain::head()`的`execute()`方法. 本文中此处的`GrOp`为`GrStrokeRectOp::Make()`所创建的`NonAAStrokeRectOp`, 其继承关系:`GrOp` -> `GrDrawOp` -> `GrMeshDrawOp` -> `NonAAStrokeRectOp`, 那么此时:
 ```
 // external/skia/src/gpu/ops/GrOp.h
 class GrOp : private SkNoncopyable {
