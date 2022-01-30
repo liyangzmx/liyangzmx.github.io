@@ -1,22 +1,258 @@
-- [App向SurfaceFlinger注册回调接口](#app向surfaceflinger注册回调接口)
-- [Composer产生VSync信](#composer产生vsync信)
-- [Vsync到SurfaceFlinger的传递](#vsync到surfaceflinger的传递)
-- [SurfaceFlinger分发事件到应用](#surfaceflinger分发事件到应用)
+- [应用启动时对`DisplayEventReceiver`的创建](#应用启动时对displayeventreceiver的创建)
+- [App向`SurfaceFlinger`注册回调接口](#app向surfaceflinger注册回调接口)
+- [VSync信号到`SurfaceFlinger`的传递](#vsync信号到surfaceflinger的传递)
+- [`SurfaceFlinger`分发事件到应用](#surfaceflinger分发事件到应用)
 - [Java层界面重绘](#java层界面重绘)
-  - [DecorView重绘](#decorview重绘)
-  - [ThreadedRenderer.updateRootDisplayList()](#threadedrendererupdaterootdisplaylist)
-  - [DecorView子对象重绘](#decorview子对象重绘)
-  - [ColorDrawable重绘子View背景](#colordrawable重绘子view背景)
-- [Native层Canvas提交绘制请求](#native层canvas提交绘制请求)
-  - [Java层ThreadedRenderer.syncAndDrawFrame()执行绘制操作](#java层threadedrenderersyncanddrawframe执行绘制操作)
-  - [Native层Skia对SkiaPipeline::renderFrame()对界面执行渲染](#native层skia对skiapipelinerenderframe对界面执行渲染)
-  - [SkSurface::flushAndSubmit()](#sksurfaceflushandsubmit)
-- [应用swapBuffer()提交窗口至SurfaceFlinger](#应用swapbuffer提交窗口至surfaceflinger)
-- [SurfaceFlinger合成窗口](#surfaceflinger合成窗口)
-- [渲染引擎合成到Composer](#渲染引擎合成到composer)
+  - [`DecorView`重绘](#decorview重绘)
+  - [`ThreadedRenderer.updateRootDisplayList()`](#threadedrendererupdaterootdisplaylist)
+  - [`DecorView`子对象重绘](#decorview子对象重绘)
+  - [`ColorDrawable`重绘子`View`背景](#colordrawable重绘子view背景)
+- [Native层`Canvas`提交绘制请求](#native层canvas提交绘制请求)
+  - [Java层`ThreadedRenderer.syncAndDrawFrame()`执行绘制操作](#java层threadedrenderersyncanddrawframe执行绘制操作)
+  - [Native层Skia对`SkiaPipeline::renderFrame()`对界面执行渲染](#native层skia对skiapipelinerenderframe对界面执行渲染)
+  - [`SkSurface::flushAndSubmit()`提交绘制请求](#sksurfaceflushandsubmit提交绘制请求)
+- [应用`swapBuffer()`交换窗口至`SurfaceFlinger`](#应用swapbuffer交换窗口至surfaceflinger)
+- [`SurfaceFlinger`合成窗口](#surfaceflinger合成窗口)
+- [渲染引擎合成到`Composer`](#渲染引擎合成到composer)
 
-## App向SurfaceFlinger注册回调接口
-`DisplayEventReceiver`创建后, 其构造函数:
+## 应用启动时对`DisplayEventReceiver`的创建
+应用启动时通过`ActivityThread.H`接收Framewroks的消息, 其`handleMessage()`中:
+```
+// frameworks/base/core/java/android/app/ActivityThread.java
+public final class ActivityThread extends ClientTransactionHandler
+        implements ActivityThreadInternal {
+    final H mH = new H();
+    ... ...
+    class H extends Handler {
+        public static final int BIND_APPLICATION        = 110;
+        public void handleMessage(Message msg) {
+            if (DEBUG_MESSAGES) Slog.v(TAG, ">>> handling: " + codeToString(msg.what));
+            switch (msg.what) {
+                ... ...
+                case EXECUTE_TRANSACTION:
+                    final ClientTransaction transaction = (ClientTransaction) msg.obj;
+                    mTransactionExecutor.execute(transaction);
+                    ... ...
+                    break;
+```
+`mTransactionExecutor`的类型是`TransactionExecutor`, 因此:
+```
+// frameworks/base/core/java/android/app/servertransaction/TransactionExecutor.java
+public class TransactionExecutor {
+    ... ...
+    public void execute(ClientTransaction transaction) {
+        if (DEBUG_RESOLVER) Slog.d(TAG, tId(transaction) + "Start resolving transaction");
+        ... ...
+        executeLifecycleState(transaction);
+        mPendingActions.clear();
+        if (DEBUG_RESOLVER) Slog.d(TAG, tId(transaction) + "End resolving transaction");
+    }
+    ... ...
+    private void executeLifecycleState(ClientTransaction transaction) {
+        ... ...
+        lifecycleItem.execute(mTransactionHandler, token, mPendingActions);
+        lifecycleItem.postExecute(mTransactionHandler, token, mPendingActions);
+    }
+```
+生命周期对象`lifecycleItem`的类型是`ActivityTransactionItem`, 因此:
+```
+// frameworks/base/core/java/android/app/servertransaction/ActivityTransactionItem.java
+public abstract class ActivityTransactionItem extends ClientTransactionItem {
+    @Override
+    public final void execute(ClientTransactionHandler client, IBinder token,
+            PendingTransactionActions pendingActions) {
+        final ActivityClientRecord r = getActivityClientRecord(client, token);
+        execute(client, r, pendingActions);
+    }
+```
+而此处的`ActivityTransactionItem`其实有子类的实现`ResumeActivityItem`, 因此:
+```
+// frameworks/base/core/java/android/app/servertransaction/ResumeActivityItem.java
+public class ResumeActivityItem extends ActivityLifecycleItem {
+    ... ...
+    @Override
+    public void execute(ClientTransactionHandler client, ActivityClientRecord r,
+            PendingTransactionActions pendingActions) {
+        client.handleResumeActivity(r, true /* finalStateRequest */, mIsForward,
+                "RESUME_ACTIVITY");
+    }
+```
+此处的`client`类型为`ClientTransactionHandler`, 其实现又是上文的`ActivityThread`:
+```
+// frameworks/base/core/java/android/app/ActivityThread.java
+    @Override
+    public void handleResumeActivity(ActivityClientRecord r, boolean finalStateRequest,
+            boolean isForward, String reason) {
+        if (r.window == null && !a.mFinished && willBeVisible) {
+            if (a.mVisibleFromClient) {
+                if (!a.mWindowAdded) {
+                    a.mWindowAdded = true;
+                    wm.addView(decor, l);
+                    ... ...
+```
+`wm`的类型是`WindowManagerImpl`, `decor`的类型是`DecorView`, 因此:
+```
+// frameworks/base/core/java/android/view/WindowManagerImpl.java
+public final class WindowManagerImpl implements WindowManager {
+    @Override
+    public void addView(@NonNull View view, @NonNull ViewGroup.LayoutParams params) {
+        applyTokens(params);
+        mGlobal.addView(view, params, mContext.getDisplayNoVerify(), mParentWindow,
+                mContext.getUserId());
+    }
+```
+`mGlobal`的类型是`WindowManagerGlobal`, 是单例的, 因此:
+```
+// frameworks/base/core/java/android/view/WindowManagerGlobal.java
+    public void addView(View view, ViewGroup.LayoutParams params,
+            Display display, Window parentWindow, int userId) {
+        ... ...
+        synchronized (mLock) {
+            ... ...
+            root = new ViewRootImpl(view.getContext(), display);
+            view.setLayoutParams(wparams);
+            mViews.add(view);
+            mRoots.add(root);
+            mParams.add(wparams);
+            try {
+                root.setView(view, wparams, panelParentView, userId);
+            } 
+            ... ...
+```
+可以看出`ViewRootImpl`被创建, `DecoView`通过`ViewRootImpl.setView()`方法设置给`ViewRootImpl`, 对于`ViewRootImpl`, 其构造方法:
+```
+// frameworks/base/core/java/android/view/ViewRootImpl.java
+    public ViewRootImpl(Context context, Display display) {
+        this(context, display, WindowManagerGlobal.getWindowSession(),
+                false /* useSfChoreographer */);
+    }
+    ... ...
+    public ViewRootImpl(@UiContext Context context, Display display, IWindowSession session,
+            boolean useSfChoreographer) {
+        ... ...
+        mChoreographer = useSfChoreographer
+                ? Choreographer.getSfInstance() : Choreographer.getInstance();
+```
+`ViewRootImpl`在初始化`mChoreographer`成员时, 第一次调用`Choreographer.getSfInstance()`对`Choreographer`类进行例化:
+```
+// frameworks/base/core/java/android/view/Choreographer.java
+    public static Choreographer getInstance() {
+        return sThreadInstance.get();
+    }
+```
+`sThreadInstance`的类型是`ThreadLocal<Choreographer>`其实现:
+```
+// libcore/ojluni/src/main/java/java/lang/ThreadLocal.java
+    public T get() {
+        Thread t = Thread.currentThread();
+        ThreadLocalMap map = getMap(t);
+        if (map != null) {
+            ThreadLocalMap.Entry e = map.getEntry(this);
+            if (e != null) {
+                @SuppressWarnings("unchecked")
+                T result = (T)e.value;
+                return result;
+            }
+        }
+        return setInitialValue();
+    }
+    private T setInitialValue() {
+        T value = initialValue();
+        Thread t = Thread.currentThread();
+        ThreadLocalMap map = getMap(t);
+        if (map != null)
+            map.set(this, value);
+        else
+            createMap(t, value);
+        return value;
+    }
+```
+显然`ThreadLocal.getMap(t)`返回空, 因为还没有`Choreographer`, 因此调用了`setInitialValue()`进而调用回`Choreographer`中的:
+```
+// frameworks/base/core/java/android/view/Choreographer.java
+    private static final ThreadLocal<Choreographer> sThreadInstance =
+            new ThreadLocal<Choreographer>() {
+        @Override
+        protected Choreographer initialValue() {
+            Looper looper = Looper.myLooper();
+            ... ...
+            Choreographer choreographer = new Choreographer(looper, VSYNC_SOURCE_APP);
+            ... ...
+            return choreographer;
+        }
+    };
+    private Choreographer(Looper looper, int vsyncSource) {
+        mLooper = looper;
+        mHandler = new FrameHandler(looper);
+        mDisplayEventReceiver = USE_VSYNC
+                ? new FrameDisplayEventReceiver(looper, vsyncSource)
+                : null;
+        ... ...
+    }
+    ... ...
+    private final class FrameDisplayEventReceiver extends DisplayEventReceiver
+            implements Runnable {
+        private boolean mHavePendingVsync;
+        private long mTimestampNanos;
+        private int mFrame;
+        private VsyncEventData mLastVsyncEventData = new VsyncEventData();
+
+        public FrameDisplayEventReceiver(Looper looper, int vsyncSource) {
+            super(looper, vsyncSource, 0);
+        }
+```
+此刻`Choreographer`类开始构造, 初始化成员`mDisplayEventReceiver`, 其类型`FrameDisplayEventReceiver`, 构造`FrameDisplayEventReceiver`时构造其父类:
+```
+// frameworks/base/core/java/android/view/DisplayEventReceiver.java
+    private static native long nativeInit(WeakReference<DisplayEventReceiver> receiver,
+            MessageQueue messageQueue, int vsyncSource, int eventRegistration);
+    public DisplayEventReceiver(Looper looper, int vsyncSource, int eventRegistration) {
+        if (looper == null) {
+            throw new IllegalArgumentException("looper must not be null");
+        }
+
+        mMessageQueue = looper.getQueue();
+        mReceiverPtr = nativeInit(new WeakReference<DisplayEventReceiver>(this), mMessageQueue,
+                vsyncSource, eventRegistration);
+    }
+```
+`nativeInit()`是Native方法, 其代码:
+```
+// frameworks/base/core/jni/android_view_DisplayEventReceiver.cpp
+static const JNINativeMethod gMethods[] = {
+    /* name, signature, funcPtr */
+    { "nativeInit",
+            "(Ljava/lang/ref/WeakReference;Landroid/os/MessageQueue;II)J",
+            (void*)nativeInit },
+    ... ...
+};
+static jlong nativeInit(JNIEnv* env, jclass clazz, jobject receiverWeak, jobject messageQueueObj,
+                        jint vsyncSource, jint eventRegistration) {
+    sp<MessageQueue> messageQueue = android_os_MessageQueue_getMessageQueue(env, messageQueueObj);
+    ... ...
+    sp<NativeDisplayEventReceiver> receiver =
+            new NativeDisplayEventReceiver(env, receiverWeak, messageQueue, vsyncSource,
+                                           eventRegistration);
+    status_t status = receiver->initialize();
+    ... ...
+    return reinterpret_cast<jlong>(receiver.get());
+}
+NativeDisplayEventReceiver::NativeDisplayEventReceiver(JNIEnv* env, jobject receiverWeak,
+                                                       const sp<MessageQueue>& messageQueue,
+                                                       jint vsyncSource, jint eventRegistration)
+      : DisplayEventDispatcher(messageQueue->getLooper(),
+                               static_cast<ISurfaceComposer::VsyncSource>(vsyncSource),
+                               static_cast<ISurfaceComposer::EventRegistration>(eventRegistration)),
+        mReceiverWeakGlobal(env->NewGlobalRef(receiverWeak)),
+        mMessageQueue(messageQueue) {
+    ALOGV("receiver %p ~ Initializing display event receiver.", this);
+}
+
+```
+分两步, 一来是`NativeDisplayEventReceiver`的构造, 二来是`NativeDisplayEventReceiver`父类的`DisplayEventDispatcher::initialize()`.
+
+## App向`SurfaceFlinger`注册回调接口
+上文构造`NativeDisplayEventReceiver`的同时构造了`DisplayEventDispatcher`:
 ```
 // frameworks/native/libs/gui/DisplayEventReceiver.cpp
 DisplayEventReceiver::DisplayEventReceiver(
@@ -91,10 +327,19 @@ status_t EventThreadConnection::stealReceiveChannel(gui::BitTube* outChannel) {
     return NO_ERROR;
 }
 ```
-至此, 应用和`SurfaceFlinger`之间已经通过`BitTube`建立了连接, 也就是说后续`SurfaceFlinger`有事件, 应用都会通过`DisplayEventReceiver`来进行接收.
+至此, 应用和`SurfaceFlinger`之间已经通过`BitTube`建立了连接, 也就是说后续`SurfaceFlinger`有事件, 应用都会通过`DisplayEventReceiver`来进行接收. 但是此时应用的`BitTube`中的`mFD`还未被应用监听, 回到上文的`DisplayEventDispatcher::initialize()`方法:
+```
+// frameworks/native/libs/gui/DisplayEventDispatcher.cpp
+status_t DisplayEventDispatcher::initialize() {
+    status_t result = mReceiver.initCheck();
+    ... ...
+    if (mLooper != nullptr) {
+        int rc = mLooper->addFd(mReceiver.getFd(), 0, Looper::EVENT_INPUT, this, NULL);
+        ... ...
+```
+自此应用都会通过`DisplayEventReceiver`对`DisplayEventReceiver::Event`时间进行接收.
 
-## Composer产生VSync信
-## Vsync到SurfaceFlinger的传递
+## VSync信号到`SurfaceFlinger`的传递
 `ComposerCallbackBridge`由`SurfaceFlinger`创建并持有, 该类继承`IComposerCallback`接口, 先看一下该类的注册:
 ```
 // frameworks/native/services/surfaceflinger/DisplayHardware/HWComposer.cpp
@@ -259,7 +504,7 @@ ssize_t DisplayEventReceiver::sendEvents(gui::BitTube* dataChannel,
 ```
 上文我们说过, 应用会通过`BitTube`接受来自`SurfaceFlinger`的通知, 揪下来再看应用一侧的处理.
 
-## SurfaceFlinger分发事件到应用
+## `SurfaceFlinger`分发事件到应用
 应用对事件的监听是从`Looper`开始的:
 ```
 // /system/core/libutils/Looper.cpp
@@ -457,7 +702,7 @@ public final class ViewRootImpl implements ViewParent,
 ```
 `mAttachInfo.mThreadRender`的类型显然是`ThreadedRenderer`, 此时应用开始渲染界面.
 
-### DecorView重绘
+### `DecorView`重绘
 ```
 // frameworks/base/core/java/android/view/ThreadedRenderer.java
 public final class ThreadedRenderer extends HardwareRenderer {
@@ -470,7 +715,7 @@ public final class ThreadedRenderer extends HardwareRenderer {
         ... ...
     }
 ```
-### ThreadedRenderer.updateRootDisplayList()
+### `ThreadedRenderer.updateRootDisplayList()`
 对于`updateRootDisplayList()`方法:
 ```
 // frameworks/base/core/java/android/view/ThreadedRenderer.java
@@ -539,7 +784,7 @@ public final class ThreadedRenderer extends HardwareRenderer {
             ... ...
 ```
 
-### DecorView子对象重绘
+### `DecorView`子对象重绘
 可以看到绘制`DecorView`时, 会绘制其子控, 这里先说下继承关系:`View` -> `ViewGroup` -> `FrameLayout` -> `DecorView`, 那么此处调用的其实是`ViewGroup.dispatchDraw()`
 ``件:
 ```
@@ -618,7 +863,7 @@ public final class ThreadedRenderer extends HardwareRenderer {
     }
 ```
 
-### ColorDrawable重绘子View背景
+### `ColorDrawable`重绘子`View`背景
 此时`renderNode`的类型为:`ColorDrawable`, 因此调用`ColorDrawable.draw()`:
 ```
 // frameworks/base/graphics/java/android/graphics/drawable/ColorDrawable.java
@@ -659,7 +904,7 @@ public abstract class BaseCanvas {
     }
 ```
 
-## Native层Canvas提交绘制请求
+## Native层`Canvas`提交绘制请求
 `nDrawRect`在Native层的实现 是`CanvasJNI::drawRect`:
 ```
 // frameworks/base/libs/hwui/jni/android_graphics_Canvas.cpp
@@ -727,7 +972,7 @@ void* DisplayListData::push(size_t pod, Args&&... args) {
 ```
 此处的`this->push<DrawRect>()`直接插入了一条回调到`fBytes`中, 这些记录将在`DisplayListData::map()`执行时被调用.
 
-### Java层ThreadedRenderer.syncAndDrawFrame()执行绘制操作
+### Java层`ThreadedRenderer.syncAndDrawFrame()`执行绘制操作
 继续调用基类`HardwareRenderer`的`syncAndDrawFrame`方法:
 ```
 // frameworks/base/graphics/java/android/graphics/HardwareRenderer.java
@@ -817,7 +1062,7 @@ bool SkiaOpenGLPipeline::draw(const Frame& frame, const SkRect& screenDirty, con
 }
 ```
 
-### Native层Skia对SkiaPipeline::renderFrame()对界面执行渲染
+### Native层Skia对`SkiaPipeline::renderFrame()`对界面执行渲染
 在`SkiaPipeline::renderFrame()`中:
 这里的`renderFrame()`, 其属于父类, 因此::
 ```
@@ -1068,7 +1313,7 @@ void GrOpsTask::recordOp(
 ```
 `fOpChains`记录了所有应该绘制的操作, 这些操作会在`GrOpsTask::execute()`时执行, 相应的操作流程将在本文后续内容介绍.
 
-### SkSurface::flushAndSubmit()
+### `SkSurface::flushAndSubmit()`提交绘制请求
 在函数末尾的`surface->flushAndSubmit()`:
 `surface`的类型时`SkSurface`, 故此处调用`SkSurface::flushAndSubmit()`:
 ```
@@ -1208,7 +1453,7 @@ class NonAAStrokeRectOp final : public GrMeshDrawOp {
 ```
 显然这时调用了`GrOpFlushState`的各种方法完成绘图.
 
-## 应用swapBuffer()提交窗口至SurfaceFlinger
+## 应用`swapBuffer()`交换窗口至`SurfaceFlinger`
 在`SkiaOpenGLPipeline::draw()`完成工作后, `CanvasContext::draw()`将调用`SkiaOpenGLPipeline::swapBuffers()`, 查看其实现:
 ```
 // frameworks/base/libs/hwui/pipeline/skia/SkiaOpenGLPipeline.cpp
@@ -1404,7 +1649,7 @@ void MessageQueue::Handler::handleMessage(const Message& message) {
 }
 ```
 
-## SurfaceFlinger合成窗口
+## `SurfaceFlinger`合成窗口
 显然`SurfaceFlinger::onMessageReceived()`被调用:
 ```
 // frameworks/native/services/surfaceflinger/SurfaceFlinger.cpp
@@ -1469,7 +1714,7 @@ void Output::finishFrame(const compositionengine::CompositionRefreshArgs& refres
     mRenderSurface->queueBuffer(std::move(*optReadyFence));
 }
 ```
-## 渲染引擎合成到Composer
+## 渲染引擎合成到`Composer`
 `mRenderSurface->queueBuffer()`完成将合成的屏幕内容送显.
 在`Output::postFramebuffer()`时有:
 ```
