@@ -3,3 +3,4 @@
 * [Binder应用层的一个情景分析](binder.md)
 * [Android VSync与渲染](VSync.md)
 * [Luancher3 启动应用](AppStart.md)
+* [系统相册播放相机录制的视频](Play.md)
