@@ -1,47 +1,54 @@
-- [系统相册播放相机录制的视频](#系统相册播放相机录制的视频)
-  - [`VideoView.openVideo()`](#videoviewopenvideo)
-    - [MediaPlayer的创建与配置](#mediaplayer的创建与配置)
-    - [`mMediaPlayer.setOnPreparedListener()`](#mmediaplayersetonpreparedlistener)
-    - [`MediaPlayer.setDataSource()`](#mediaplayersetdatasource)
-      - [Native层`MediaPlayer`的创建](#native层mediaplayer的创建)
-      - [`MediaPlayer::setDataSource()`](#mediaplayersetdatasource-1)
-        - [`mediaserver`中`MediaPlayerService::Client`的创建](#mediaserver中mediaplayerserviceclient的创建)
-        - [`mediaserver`中`NuPlayerDriver`的创建](#mediaserver中nuplayerdriver的创建)
-        - [`mediaserver`中`NuPlayerDriver`的`mPlayer`的创建与初始化](#mediaserver中nuplayerdriver的mplayer的创建与初始化)
+- [`VideoView.openVideo()`](#videoviewopenvideo)
+  - [MediaPlayer的创建与配置](#mediaplayer的创建与配置)
+  - [`mMediaPlayer.setOnPreparedListener()`](#mmediaplayersetonpreparedlistener)
+  - [`MediaPlayer.setDataSource()`](#mediaplayersetdatasource)
+    - [Native层`MediaPlayer`的创建](#native层mediaplayer的创建)
+    - [`MediaPlayer::setDataSource()`](#mediaplayersetdatasource-1)
+    - [`MediaPlayerService::create()`创建播放器](#mediaplayerservicecreate创建播放器)
+      - [`MediaPlayerService::Client`的创建](#mediaplayerserviceclient的创建)
+        - [`NuPlayerDriver`的创建](#nuplayerdriver的创建)
+        - [`NuPlayer`的创建与初始化](#nuplayer的创建与初始化)
         - [`AudioOutput`的创建与配置](#audiooutput的创建与配置)
       - [`NuPlayerDriver::setDataSource()`](#nuplayerdriversetdatasource)
       - [`NuPlayer::setDataSourceAsync()`](#nuplayersetdatasourceasync)
       - [`GenericSource`的创建](#genericsource的创建)
-    - [MediaPlayer.setDisplay()](#mediaplayersetdisplay)
-      - [`NuPlayerDriver::setVideoSurfaceTexture()`](#nuplayerdriversetvideosurfacetexture)
-      - [`NuPlayer::setVideoSurfaceTextureAsync()`](#nuplayersetvideosurfacetextureasync)
-    - [`MediaPlayer.prepareAsync()`](#mediaplayerprepareasync)
-      - [`NuPlayerDriver::prepareAsync()`](#nuplayerdriverprepareasync)
-      - [`NuPlayer::prepareAsync()`](#nuplayerprepareasync)
-  - [`MediaPlayer.start()`](#mediaplayerstart)
-    - [`NuPlayerDriver::start()`](#nuplayerdriverstart)
-    - [`kWhatScanSources`读取播放源信息](#kwhatscansources读取播放源信息)
-    - [`NuPlayer::instantiateDecoder()`实例化音视频解码器的区别](#nuplayerinstantiatedecoder实例化音视频解码器的区别)
-      - [视频解码器](#视频解码器)
-      - [音频解码器](#音频解码器)
-    - [解码器`NuPlayer::Decoder`的构造](#解码器nuplayerdecoder的构造)
-    - [解码器`NuPlayer::Decoder`的初始化](#解码器nuplayerdecoder的初始化)
-    - [解码器`NuPlayer::Decoder`的配置](#解码器nuplayerdecoder的配置)
-      - [`MediaCodec`的构造](#mediacodec的构造)
+  - [MediaPlayer.setDisplay()](#mediaplayersetdisplay)
+    - [`NuPlayerDriver::setVideoSurfaceTexture()`](#nuplayerdriversetvideosurfacetexture)
+    - [`NuPlayer::setVideoSurfaceTextureAsync()`](#nuplayersetvideosurfacetextureasync)
+  - [`MediaPlayer.prepareAsync()`](#mediaplayerprepareasync)
+    - [`NuPlayerDriver::prepareAsync()`](#nuplayerdriverprepareasync)
+    - [`NuPlayer::prepareAsync()`](#nuplayerprepareasync)
+- [`MediaPlayer.start()`](#mediaplayerstart)
+  - [`NuPlayerDriver::start()`](#nuplayerdriverstart)
+  - [`NuPlayer::instantiateDecoder()`实例化音视频解码器](#nuplayerinstantiatedecoder实例化音视频解码器)
+    - [视频解码器](#视频解码器)
+    - [音频解码器](#音频解码器)
+  - [解码器`NuPlayer::Decoder`的构造](#解码器nuplayerdecoder的构造)
+  - [解码器`NuPlayer::Decoder`的初始化](#解码器nuplayerdecoder的初始化)
+  - [`NuPlayer::Decoder::onConfigure()`](#nuplayerdecoderonconfigure)
+    - [`MediaCodec::MediaCodec()`](#mediacodecmediacodec)
+      - [`MediaCodec::init()`](#mediacodecinit)
         - [`CCodec`的构造](#ccodec的构造)
         - [`CCodec::setCallback()`配置解码器回调](#ccodecsetcallback配置解码器回调)
         - [`CCodecBufferChannel::setCallback()`配置解码缓冲通道的回调](#ccodecbufferchannelsetcallback配置解码缓冲通道的回调)
-      - [开始`MediaCodec`的配置, `INITIALIZED` -> `CONFIGURING`](#开始mediacodec的配置-initialized---configuring)
-      - [执行MediaCodec`的配置, `CONFIGURING` -> `CONFIGURED`](#执行mediacodec的配置-configuring-configured)
-      - [`MediaCodec`的启动, `CONFIGURED` -> `STARTING`](#mediacodec的启动-configured---starting)
-      - [`STARTING` -> `STARTED`](#starting---started)
-    - [来自`Codec2`的Buffer](#来自codec2的buffer)
-      - [`handleOutputFormatChangeIfNeeded()`打开音频输出](#handleoutputformatchangeifneeded打开音频输出)
-      - [`onOutputBufferAvailable()`](#onoutputbufferavailable)
-      - [`postDrainAudioQueue_l()`回放音频数据](#postdrainaudioqueue_l回放音频数据)
-      - [`postDrainVideoQueue()`回方视频数据](#postdrainvideoqueue回方视频数据)
+        - [`CCodec::initiateAllocateComponent()`, `MediaCodec`状态: `UNINITIALIZED` -> `INITIALIZING`](#ccodecinitiateallocatecomponent-mediacodec状态-uninitialized---initializing)
+        - [CCodec::initiateAllocateComponent()完成, `MediaCodec`状态: `INITIALIZING` -> `INITIALIZED`](#ccodecinitiateallocatecomponent完成-mediacodec状态-initializing---initialized)
+    - [`MediaCodec::configure()`, MediaCodec`状态: `INITIALIZED` -> `CONFIGURING`](#mediacodecconfigure-mediacodec状态-initialized-configuring)
+      - [`CCodec::initiateConfigureComponent()`, MediaCodec`状态: `CONFIGURING` -> `CONFIGURED`](#ccodecinitiateconfigurecomponent-mediacodec状态-configuring-configured)
+    - [`MediaCodec::start()`, `MediaCodec`状态: `CONFIGURED` -> `STARTING`](#mediacodecstart-mediacodec状态-configured---starting)
+      - [`CCodec::initiateStart()`, MediaCodec`状态: `STARTING` -> `STARTED`](#ccodecinitiatestart-mediacodec状态-starting-started)
+      - [`CCodec::start()`](#ccodecstart)
+      - [`CCodecBufferChannel::start()`时对视频输出的`Surface`的配置](#ccodecbufferchannelstart时对视频输出的surface的配置)
+- [来自`Codec2`的Buffer](#来自codec2的buffer)
+  - [`handleOutputFormatChangeIfNeeded()`打开音频输出](#handleoutputformatchangeifneeded打开音频输出)
+  - [`onOutputBufferAvailable()`](#onoutputbufferavailable)
+  - [`postDrainAudioQueue_l()`回放音频数据](#postdrainaudioqueue_l回放音频数据)
+    - [`AudioOutput::write()`输出音频数据](#audiooutputwrite输出音频数据)
+      - [`AudioTrack::write()`回放音频](#audiotrackwrite回放音频)
+  - [`postDrainVideoQueue()`回放视频数据](#postdrainvideoqueue回放视频数据)
+    - [`MediaCodec::onReleaseOutputBuffer()`释放(并输出)视频帧](#mediacodeconreleaseoutputbuffer释放并输出视频帧)
+      - [`Codec2Client::Component::queueToOutputSurface()`交换视频帧到应用的`BBQSurface`](#codec2clientcomponentqueuetooutputsurface交换视频帧到应用的bbqsurface)
 
-# 系统相册播放相机录制的视频
 用户头一次在相册中点击视频时`MovieActivity`被创建, 因此:
 ```
 // packages/apps/Gallery2/src/com/android/gallery3d/app/MovieActivity.java
@@ -75,7 +82,7 @@
     }
 ```
 
-## `VideoView.openVideo()`
+# `VideoView.openVideo()`
 `mVideoView`为上文提到的`VideoView`, 通过其`setVideoURI()`设置要播放的文件路径:
 ```
 // frameworks/base/core/java/android/widget/VideoView.java
@@ -92,7 +99,7 @@
     }
 ```
 
-### MediaPlayer的创建与配置
+## MediaPlayer的创建与配置
 根据上文代码`openVideo()`被调用:
 ```
 // frameworks/base/core/java/android/widget/VideoView.java
@@ -124,7 +131,7 @@
             ... ...
 ```
 
-### `mMediaPlayer.setOnPreparedListener()`
+## `mMediaPlayer.setOnPreparedListener()`
 ```
 // frameworks/base/media/java/android/media/MediaPlayer.java
     public void setOnPreparedListener(OnPreparedListener listener)
@@ -134,7 +141,7 @@
 ```
 应用设置了`OnPreparedListener`到`MediaPlayer`中, 改监听要等到`MediaPlayer.prepareAsync()`执行完成才会被调用, 后问会讲到.
 
-### `MediaPlayer.setDataSource()`
+## `MediaPlayer.setDataSource()`
 先看`setDataSource()`:
 ```
 // frameworks/base/media/java/android/media/MediaPlayer.java
@@ -212,7 +219,7 @@ android_media_MediaPlayer_setDataSourceFD(JNIEnv *env, jobject thiz, jobject fil
 }
 ```
 
-#### Native层`MediaPlayer`的创建
+### Native层`MediaPlayer`的创建
 其`mp`通过``获得, 而其对应的Java层的`MediaPlayer.mNativeContext`是在`MeidaCodec.native_setup()`时设置的:
 ```
 // frameworks/base/media/jni/android_media_MediaPlayer.cpp
@@ -251,7 +258,7 @@ status_t MediaPlayer::setListener(const sp<MediaPlayerListener>& listener)
 ```
 可以看出`JNIMediaPlayerListener`作为`MediaPlayerListener`被`MediaPlayer`的`mListener`保存.
 
-#### `MediaPlayer::setDataSource()`
+### `MediaPlayer::setDataSource()`
 上文 `env->SetLongField()`设置的正是 `mNativeContext`. 回到`android_media_MediaPlayer_setDataSourceFD()`, 此时`MediaPlayer::setDataSource()`被调用:
 ```
 // frameworks/av/media/libmedia/mediaplayer.cpp
@@ -271,7 +278,8 @@ status_t MediaPlayer::setDataSource(int fd, int64_t offset, int64_t length)
 }
 ```
 
-##### `mediaserver`中`MediaPlayerService::Client`的创建
+### `MediaPlayerService::create()`创建播放器
+#### `MediaPlayerService::Client`的创建
 首先通过Binder调用`IMediaPlayerService::create()`创建一个`IMediaPlayer`:
 ```
 // frameworks/av/media/libmediaplayerservice/MediaPlayerService.cpp
@@ -325,7 +333,7 @@ status_t MediaPlayerService::Client::setDataSource(int fd, int64_t offset, int64
 }
 ```
 
-##### `mediaserver`中`NuPlayerDriver`的创建
+##### `NuPlayerDriver`的创建
 `setDataSource_pre()`时做了很多工作, 但主要还是创建了`MediaPlayerBase`, `playerType`确定了后续需要创建的播放器的类型, Android目前的播放器工厂类默认是`NuPlayerFactory`(还有一种是`TestPlayerFactory`):
 ```
 // frameworks/av/media/libmediaplayerservice/MediaPlayerService.cpp
@@ -413,7 +421,7 @@ NuPlayerDriver::NuPlayerDriver(pid_t pid)
 }
 ```
 
-##### `mediaserver`中`NuPlayerDriver`的`mPlayer`的创建与初始化
+##### `NuPlayer`的创建与初始化
 显然这里有两个调用:
 * NuPlayer::NuPlayer()
 * NuPlayer::init()
@@ -539,7 +547,7 @@ void NuPlayerDriver::notifySetDataSourceCompleted(status_t err) {
 上文`NuPlayerDriver::setDataSource()`通过`mCondition.wait(mLock)`等待`NuPlayer`完成, 因此`NuPlayerDriver::notifySetDataSourceCompleted()`执行完成后 上文的`NuPlayerDriver::setDataSource()`返回.
 
 #### `GenericSource`的创建
-根据上文, `mPlayer`的类型显然是`NuPlayer`:
+根据上文, `mPlayer`的类型显然是`NuPlayer`, 回到`uPlayer::setDataSourceAsync()`:
 ```
 // frameworks/av/media/libmediaplayerservice/nuplayer/NuPlayer.cpp
 void NuPlayer::setDataSourceAsync(int fd, int64_t offset, int64_t length) {
@@ -605,7 +613,7 @@ status_t MediaPlayerService::Client::setDataSource_post(
 `MediaPlayerService::Client::setDataSource()`最后通过`setDataSource_post()`将创建的`NuPlayerDriver`设置在`MediaPlayerService::Client`的`mPlayer`.
 
 
-### MediaPlayer.setDisplay()
+## MediaPlayer.setDisplay()
 回到`VidewView.openVideo()`中, `mMediaPlayer.setDisplay()`将自身的`mSurfaceHolder`设置给了`MediaPlayer`:
 ```
 // frameworks/base/media/java/android/media/MediaPlayer.java
@@ -684,7 +692,7 @@ status_t MediaPlayerService::Client::setVideoSurfaceTexture(
     } else ... ...
 ```
 
-#### `NuPlayerDriver::setVideoSurfaceTexture()`
+### `NuPlayerDriver::setVideoSurfaceTexture()`
 通过上层传递的`bufferProducer`创建了新的`Surface`, 又通过`disconnectNativeWindow_l()`断开了`bufferProducer`与应用持有的`Surface`(Native)的联系, 然后将新创建的`Surface`保存到`Client::mConnectedWindow`, 这意味着, `mediaserver`直接负责生产`GraphicBuffer`给原本属于应用持有的`Surface`. 继续看此处的`p->setVideoSurfaceTexture()`, `p`的类型为`MediaPlayerBase`, 也就是`NuPlayerDriver`:
 ```
 // frameworks/av/media/libmediaplayerservice/nuplayer/NuPlayerDriver.cpp
@@ -699,7 +707,7 @@ status_t NuPlayerDriver::setVideoSurfaceTexture(
 }
 ```
 
-#### `NuPlayer::setVideoSurfaceTextureAsync()`
+### `NuPlayer::setVideoSurfaceTextureAsync()`
 如上文, `mPlayer`的类型是`NuPlayer`, 和上文的`NuPlayer::setDataSource()`类似, `setVideoSurfaceTextureAsync()`也是异步的:
 ```
 // frameworks/av/media/libmediaplayerservice/nuplayer/NuPlayer.cpp
@@ -758,7 +766,7 @@ void NuPlayerDriver::notifySetSurfaceComplete() {
 ```
 同理可知`NuPlayerDriver::setVideoSurfaceTexture()`返回.
 
-### `MediaPlayer.prepareAsync()`
+## `MediaPlayer.prepareAsync()`
 回到`VidewView.openVideo()`中, `mMediaPlayer.prepareAsync()`即开始通知播放器做准备工作:
 ```
 // frameworks/base/media/java/android/media/MediaPlayer.java
@@ -792,7 +800,7 @@ android_media_MediaPlayer_prepareAsync(JNIEnv *env, jobject thiz)
 }
 ```
 
-#### `NuPlayerDriver::prepareAsync()`
+### `NuPlayerDriver::prepareAsync()`
 `NuPlayerDriver::setVideoSurfaceTexture()`的调用是多余的, 但并没什么坏处:
 ```
 // frameworks/av/media/libmediaplayerservice/nuplayer/NuPlayerDriver.cpp
@@ -813,7 +821,7 @@ status_t NuPlayerDriver::prepareAsync() {
 
 ```
 
-#### `NuPlayer::prepareAsync()`
+### `NuPlayer::prepareAsync()`
 播放器的状态如果是还未播放过, 那肯定是`STATE_UNPREPARED`, `STATE_STOPPED`的情景这里不讨论:
 ```
 // frameworks/av/media/libmediaplayerservice/nuplayer/NuPlayer.cpp
@@ -1199,7 +1207,7 @@ public class MediaPlayer extends PlayerBase
 ```
 此时视频的播放仍未开始, 因此`if (mVideoWidth != 0 && mVideoHeight != 0)`条件不成立, 且此时`if (mTargetState == STATE_PLAYING)`条件也不满足.
 
-## `MediaPlayer.start()`
+# `MediaPlayer.start()`
 回到`MoviePlayer`的构造:
 ```
 // packages/apps/Gallery2/src/com/android/gallery3d/app/MoviePlayer.java
@@ -1276,7 +1284,7 @@ public class MediaPlayer extends PlayerBase
     ... ...
 }
 ```
-### `NuPlayerDriver::start()`
+## `NuPlayerDriver::start()`
 ```
 // frameworks/base/media/jni/android_media_MediaPlayer.cpp
 static const JNINativeMethod gMethods[] = {
@@ -1293,7 +1301,7 @@ android_media_MediaPlayer_start(JNIEnv *env, jobject thiz)
     process_media_player_call( env, thiz, mp->start(), NULL, NULL );
 }
 
-### `NuPlayer::start()`
+## `NuPlayer::start()`
 // frameworks/av/media/libmediaplayerservice/nuplayer/NuPlayerDriver.cpp
 status_t NuPlayerDriver::start() {
     ALOGV("start(%p), state is %d, eos is %d", this, mState, mAtEOS);
@@ -1373,7 +1381,7 @@ NuPlayer::Renderer::Renderer(
 `NuPlayer`的`mAudioSink`也就是`AudioOutput`被设置给了`NuPlayer::Renderer`的`mAudioSink`成员, 后续渲染时, 此处会用到.
 通过`setRenderer()`, `NuPlayer::Renderer`均设置到了`mVideoDecoder`和`mAudioDecoder`所对应的`CCodec`的父类`CodecBase`的`mRender`中(过程略去).
 
-### `kWhatScanSources`读取播放源信息
+## `NuPlayer::instantiateDecoder()`实例化音视频解码器
 对于`NuPlayer::onStart()`, 接着接看`postScanSources()`:
 ```
 // frameworks/av/media/libmediaplayerservice/nuplayer/NuPlayerDriver.cpp
@@ -1409,8 +1417,8 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
     }
 }
 ```
-### `NuPlayer::instantiateDecoder()`实例化音视频解码器的区别
-#### 视频解码器
+
+### 视频解码器
 ```
 // frameworks/av/media/libmediaplayerservice/nuplayer/NuPlayer.cpp
 status_t NuPlayer::instantiateDecoder(
@@ -1441,7 +1449,7 @@ status_t NuPlayer::instantiateDecoder(
 ```
 
 
-#### 音频解码器
+### 音频解码器
 ```
 // frameworks/av/media/libmediaplayerservice/nuplayer/NuPlayer.cpp
 status_t NuPlayer::instantiateDecoder(
@@ -1480,7 +1488,7 @@ status_t NuPlayer::instantiateDecoder(
 }
 ```
 
-### 解码器`NuPlayer::Decoder`的构造
+## 解码器`NuPlayer::Decoder`的构造
 ```
 // frameworks/av/media/libmediaplayerservice/nuplayer/NuPlayerDecoder.cpp
 NuPlayer::Decoder::Decoder(
@@ -1515,7 +1523,7 @@ NuPlayer::DecoderBase::DecoderBase(const sp<AMessage> &notify)
 }
 ```
 
-### 解码器`NuPlayer::Decoder`的初始化
+## 解码器`NuPlayer::Decoder`的初始化
 `NuPlayer::instantiateDecoder()`中, `(*decoder)->init()`负责初始化解码器:
 ```
 // frameworks/av/media/libmediaplayerservice/nuplayer/NuPlayerDecoderBase.cpp
@@ -1524,7 +1532,7 @@ void NuPlayer::DecoderBase::init() {
 }
 ```
 
-### 解码器`NuPlayer::Decoder`的配置
+## `NuPlayer::Decoder::onConfigure()`
 `NuPlayer::instantiateDecoder()`中, `(*decoder)->configure(format)`开始配置解码器:
 ```
 // frameworks/av/media/libmediaplayerservice/nuplayer/NuPlayerDecoderBase.cpp
@@ -1570,7 +1578,7 @@ void NuPlayer::Decoder::onConfigure(const sp<AMessage> &format) {
     ... ...
 }
 ```
-#### `MediaCodec`的构造
+### `MediaCodec::MediaCodec()`
 `NuPlayer::Decoder::onConfigure()`中`MediaCodec::CreateByType()`负责创建`MediaCodec`:
 ```
 // frameworks/av/media/libstagefright/MediaCodec.cpp
@@ -1667,7 +1675,7 @@ MediaCodec::MediaCodec(
 ```
 `mGetCodecBase`被初始化为一个`std::function<>`对象, 后文的`MediaCodec::init()`会调用此`lambada`.
 
-##### `CCodec`的构造
+#### `MediaCodec::init()`
 回到`MediaCodec::CreateByType()`中, `MediaCodec`创建完成后通过`init()`配置通过`MediaCodecList::findMatchingCodecs()`找到的解码器:
 ```
 // frameworks/av/media/libstagefright/MediaCodec.cpp
@@ -1682,9 +1690,17 @@ status_t MediaCodec::init(const AString &name) {
     mBufferChannel->setCallback(
             std::unique_ptr<CodecBase::BufferCallback>(
                     new BufferCallback(new AMessage(kWhatCodecNotify, this))));
+    sp<AMessage> msg = new AMessage(kWhatInit, this);
+    ... ...
+    for (int i = 0; i <= kMaxRetry; ++i) {
+        ... ...
+        err = PostAndAwaitResponse(msg, &response);
+        ... ...
+    }
     ... ...
 ```
 
+##### `CCodec`的构造
 `mGetCodecBase`上文已介绍过, 故:
 ```
 // frameworks/av/media/libstagefright/MediaCodec.cpp
@@ -1733,7 +1749,95 @@ public:
 ```
 因此`MediaCodec::BufferCallback`作为`CodecBase::BufferCallback`设置在了`CCodecBufferChannel`的`mCallback`方法.
 
-#### 开始`MediaCodec`的配置, `INITIALIZED` -> `CONFIGURING`
+##### `CCodec::initiateAllocateComponent()`, `MediaCodec`状态: `UNINITIALIZED` -> `INITIALIZING`
+回到`MediaCodec::init()`后期`kWhatInit`消息被发出, 其响应:
+```
+// frameworks/av/media/libstagefright/MediaCodec.cpp
+void MediaCodec::onMessageReceived(const sp<AMessage> &msg) {
+    switch (msg->what()) {
+        case kWhatCodecNotify:
+        ... ...
+        case kWhatInit:
+        {
+            ... ...
+            setState(INITIALIZING);
+            ... ...
+            mCodec->initiateAllocateComponent(format);
+            break;
+        }
+        ... ...
+    }
+}
+```
+##### CCodec::initiateAllocateComponent()完成, `MediaCodec`状态: `INITIALIZING` -> `INITIALIZED`
+`mCodec`的类型是`CCodec`, 故:
+```
+// frameworks/av/media/codec2/sfplugin/CCodec.cpp
+void CCodec::initiateAllocateComponent(const sp<AMessage> &msg) {
+    ... ...
+    sp<AMessage> allocMsg(new AMessage(kWhatAllocate, this));
+    allocMsg->setObject("codecInfo", codecInfo);
+    allocMsg->post();
+}
+
+void CCodec::onMessageReceived(const sp<AMessage> &msg) {
+    TimePoint now = std::chrono::steady_clock::now();
+    CCodecWatchdog::getInstance()->watch(this);
+    switch (msg->what()) {
+        case kWhatAllocate: {
+            ... ...
+            allocate((MediaCodecInfo *)obj.get());
+            break;
+        }
+        ... ...
+
+void CCodec::allocate(const sp<MediaCodecInfo> &codecInfo) {
+    ... ...
+    client = Codec2Client::CreateFromService("default");
+    ... ...
+    std::shared_ptr<Codec2Client::Component> comp;
+    c2_status_t status = Codec2Client::CreateComponentByName(
+            componentName.c_str(),
+            mClientListener,
+            &comp,
+            &client);
+    ... ...
+    mChannel->setComponent(comp);
+    ... ...
+    mCallback->onComponentAllocated(componentName.c_str());
+}
+```
+`mCallback`的类型是`CodecCallback`, 此处调用到`CodecCallback::onComponentAllocated()`:
+```
+// frameworks/av/media/libstagefright/MediaCodec.cpp
+void CodecCallback::onComponentAllocated(const char *componentName) {
+    sp<AMessage> notify(mNotify->dup());
+    notify->setInt32("what", kWhatComponentAllocated);
+    notify->setString("componentName", componentName);
+    notify->post();
+}
+
+void MediaCodec::onMessageReceived(const sp<AMessage> &msg) {
+    switch (msg->what()) {
+        case kWhatCodecNotify:
+        {
+            ... ...
+            switch (what) {
+                case kWhatError:
+                ... ...
+                case kWhatComponentAllocated:
+                {
+                    ... ...
+                    setState(INITIALIZED);
+                    ... ...
+                    postPendingRepliesAndDeferredMessages("kWhatComponentAllocated");
+                    break;
+                }
+                ... ...
+```
+至此`MediaCodec::init()`算结束了.
+
+### `MediaCodec::configure()`, MediaCodec`状态: `INITIALIZED` -> `CONFIGURING`
 回到`NuPlayer::Decoder::onConfigure()`, 开始通过`mCodec->configure()`对`MediaCodec`进行配置:
 ```
 // frameworks/av/media/libstagefright/MediaCodec.cpp
@@ -1779,7 +1883,7 @@ void MediaCodec::onMessageReceived(const sp<AMessage> &msg) {
 ```
 `PostAndAwaitResponse()`会等待`MediaCodec::onMessageReceived()`处理完成的消息回复, 后者通过`mReplyID`记录了回复的ID. 后问有用到.
 
-#### 执行MediaCodec`的配置, `CONFIGURING` -> `CONFIGURED`
+#### `CCodec::initiateConfigureComponent()`, MediaCodec`状态: `CONFIGURING` -> `CONFIGURED`
 `mCodec`的类型是`CCodec`, 因此:
 ```
 // frameworks/av/media/codec2/sfplugin/CCodec.cpp
@@ -1870,7 +1974,7 @@ void MediaCodec::postPendingRepliesAndDeferredMessages(
 ```
 此时上文的`PostAndAwaitResponse()`返回, `MediaCodec::configure()`结束.
 
-#### `MediaCodec`的启动, `CONFIGURED` -> `STARTING`
+### `MediaCodec::start()`, `MediaCodec`状态: `CONFIGURED` -> `STARTING`
 回到`NuPlayer::Decoder::onConfigure()`中, 此时调用到`mCodec->start()`:
 ```
 // frameworks/av/media/libstagefright/MediaCodec.cpp
@@ -1899,7 +2003,7 @@ void MediaCodec::onMessageReceived(const sp<AMessage> &msg) {
         }
         ... ...
 ```
-#### `STARTING` -> `STARTED`
+#### `CCodec::initiateStart()`, MediaCodec`状态: `STARTING` -> `STARTED`
 `PostAndAwaitResponse()`和上文的流程基本相同, 仅关注主要的流程`CCodec::initiateStart()`:
 ```
 // frameworks/av/media/codec2/sfplugin/CCodec.cpp
@@ -1917,7 +2021,12 @@ void CCodec::initiateStart() {
     }
     (new AMessage(kWhatStart, this))->post();
 }
+```
 
+#### `CCodec::start()`
+`kWhatStart`消息由`CCodec::onMessageReceived()`处理:
+```
+// frameworks/av/media/codec2/sfplugin/CCodec.cpp
 void CCodec::onMessageReceived(const sp<AMessage> &msg) {
     TimePoint now = std::chrono::steady_clock::now();
     CCodecWatchdog::getInstance()->watch(this);
@@ -1944,7 +2053,90 @@ void CCodec::start() {
     mCallback->onStartCompleted();
     (void)mChannel->requestInitialInputBuffers();
 }
+```
+#### `CCodecBufferChannel::start()`时对视频输出的`Surface`的配置
+```
+// frameworks/av/media/codec2/sfplugin/CCodecBufferChannel.cpp
+status_t CCodecBufferChannel::start(
+        const sp<AMessage> &inputFormat,
+        const sp<AMessage> &outputFormat,
+        bool buffersBoundToCodec) {
+    ... ...
+    if (outputFormat != nullptr) {
+        ... ...
+        // Try to set output surface to created block pool if given.
+        if (outputSurface) {
+            mComponent->setOutputSurface(
+                    outputPoolId_,
+                    outputSurface,
+                    outputGeneration,
+                    maxDequeueCount);
+        } else ... ...
+        ... ...
+    }
+    ... ...
+    mInputMetEos = false;
+    mSync.start();
+    return OK;
+}
+```
+继续对`mComponent`也就是``进行配置:
+```
+// frameworks/av/media/codec2/hidl/client/client.cpp
+c2_status_t Codec2Client::Component::setOutputSurface(
+        C2BlockPool::local_id_t blockPoolId,
+        const sp<IGraphicBufferProducer>& surface,
+        uint32_t generation,
+        int maxDequeueCount) {
+    ... ...
+    if (!surface) {
+        mOutputBufferQueue->configure(nullIgbp, generation, 0, maxDequeueCount, nullptr);
+    } else if (surface->getUniqueId(&bqId) != OK) {
+        ... ...
+        mOutputBufferQueue->configure(nullIgbp, generation, 0, maxDequeueCount, nullptr);
+    } else {
+        mOutputBufferQueue->configure(surface, generation, bqId, maxDequeueCount, mBase1_2 ?
+                                      &syncObj : nullptr);
+    }
+    ... ...
+}
+```
+`mOutputBufferQueue`的类型是`OutputBufferQueue`, 因此不管那个分支, 都调用了`OutputBufferQueue::configure()`:
+```
+// frameworks/av/media/codec2/hidl/client/output.cpp
+bool OutputBufferQueue::configure(const sp<IGraphicBufferProducer>& igbp,
+                                  uint32_t generation,
+                                  uint64_t bqId,
+                                  int maxDequeueBufferCount,
+                                  std::shared_ptr<V1_2::SurfaceSyncObj> *syncObj) {
+    ... ...
+    sp<GraphicBuffer> buffers[BufferQueueDefs::NUM_BUFFER_SLOTS];
+    std::weak_ptr<_C2BlockPoolData>
+            poolDatas[BufferQueueDefs::NUM_BUFFER_SLOTS];
+    {
+        ... ...
+        mIgbp = igbp;
+        ... ...
+        for (int i = 0; i < BufferQueueDefs::NUM_BUFFER_SLOTS; ++i) {
+            ... ...
+            status_t result = igbp->attachBuffer(&bqSlot, mBuffers[i]);
+            if (result != OK) {
+                continue;
+            }
+            bool attach =
+                    _C2BlockFactory::EndAttachBlockToBufferQueue(
+                            data, mOwner, getHgbp(mIgbp), mSyncMem,
+                            generation, bqId, bqSlot);
+            ... ...
+        }
+        ... ...
+    }
+    ... ...
+}
+```
+`IGraphicBufferProducer`被设置到了`OutputBufferQueue`的`mIgbp`, 在后文`OutputBufferQueue::outputBuffer()`时会用到
 
+```
 // frameworks/av/media/libstagefright/MediaCodec.cpp
 void CodecCallback::onStartCompleted() {
     sp<AMessage> notify(mNotify->dup());
@@ -1974,7 +2166,7 @@ void MediaCodec::onMessageReceived(const sp<AMessage> &msg) {
 ```
 `postPendingRepliesAndDeferredMessages("kWhatStartCompleted")`完成后, `MediaCodec::start()`返回.
 
-### 来自`Codec2`的Buffer
+# 来自`Codec2`的Buffer
 `Codec2`组建`Component`通过`IHwComponentListener`也就是`BnHwComponentListener::_hidl_onWorkDone()`接口通知`mediaserver`:
 ```
 // frameworks/av/media/codec2/hidl/client/client.cpp
@@ -2099,7 +2291,7 @@ void MediaCodec::onMessageReceived(const sp<AMessage> &msg) {
                 ... ...
 ```
 
-#### `handleOutputFormatChangeIfNeeded()`打开音频输出
+## `handleOutputFormatChangeIfNeeded()`打开音频输出
 ```
 // frameworks/av/media/libstagefright/MediaCodec.cpp
 void MediaCodec::handleOutputFormatChangeIfNeeded(const sp<MediaCodecBuffer> &buffer) {
@@ -2267,7 +2459,7 @@ status_t MediaPlayerService::AudioOutput::open(
 }
 ```
 
-#### `onOutputBufferAvailable()`
+## `onOutputBufferAvailable()`
 ```
 void MediaCodec::onOutputBufferAvailable() {
     ... ...
@@ -2364,7 +2556,7 @@ void NuPlayer::Renderer::onQueueBuffer(const sp<AMessage> &msg) {
     syncQueuesDone_l();
 }
 ```
-#### `postDrainAudioQueue_l()`回放音频数据
+## `postDrainAudioQueue_l()`回放音频数据
 ```
 void NuPlayer::Renderer::postDrainAudioQueue_l(int64_t delayUs) {
     ... ...
@@ -2372,7 +2564,9 @@ void NuPlayer::Renderer::postDrainAudioQueue_l(int64_t delayUs) {
     msg->setInt32("drainGeneration", mAudioDrainGeneration);
     msg->post(delayUs);
 }
-
+```
+### `AudioOutput::write()`输出音频数据
+```
 void NuPlayer::Renderer::onMessageReceived(const sp<AMessage> &msg) {
     switch (msg->what()) {
         case kWhatOpenAudioSink:
@@ -2405,6 +2599,8 @@ bool NuPlayer::Renderer::onDrainAudioQueue() {
     return reschedule;
 }
 ```
+
+#### `AudioTrack::write()`回放音频
 `NuPlayer::Render`的`mAudioSink`为创建时由`NuPlayer`传递的, 因此`AudioOutput::write()`被调用:
 ```
 // frameworks/av/media/libmediaplayerservice/MediaPlayerService.cpp
@@ -2422,7 +2618,7 @@ ssize_t MediaPlayerService::AudioOutput::write(const void* buffer, size_t size, 
 ```
 `mTrack`正式`AudioOutput::open()`时打开的`AudioTrack`.
 
-#### `postDrainVideoQueue()`回方视频数据
+## `postDrainVideoQueue()`回放视频数据
 ```
 // frameworks/av/media/libmediaplayerservice/nuplayer/NuPlayerRenderer.cpp
 void NuPlayer::Renderer::postDrainVideoQueue() {
@@ -2520,7 +2716,11 @@ status_t MediaCodec::PostAndAwaitResponse(
     ... ...
     return err;
 }
+```
 
+### `MediaCodec::onReleaseOutputBuffer()`释放(并输出)视频帧
+`kWhatReleaseOutputBuffer`消息由`MediaCodec::onMessageReceived()`处理:
+```
 void MediaCodec::onMessageReceived(const sp<AMessage> &msg) {
     switch (msg->what()) {
         case kWhatCodecNotify:
@@ -2541,6 +2741,8 @@ status_t MediaCodec::onReleaseOutputBuffer(const sp<AMessage> &msg) {
         status_t err = mBufferChannel->renderOutputBuffer(buffer, renderTimeNs);
         ... ...
 ```
+
+#### `Codec2Client::Component::queueToOutputSurface()`交换视频帧到应用的`BBQSurface`
 显然`mBufferChannel`的类型是`CCodecBufferChannel`, 因此:
 ```
 // frameworks/av/media/codec2/sfplugin/CCodecBufferChannel.cpp
@@ -2552,3 +2754,37 @@ status_t CCodecBufferChannel::renderOutputBuffer(
     return OK;
 }
 ```
+`mComponent`的类型是`Codec2Client::Component`, 因此:
+```
+// frameworks/av/media/codec2/hidl/client/client.cpp
+status_t Codec2Client::Component::queueToOutputSurface(
+        const C2ConstGraphicBlock& block,
+        const QueueBufferInput& input,
+        QueueBufferOutput* output) {
+    return mOutputBufferQueue->outputBuffer(block, input, output);
+}
+```
+`mOutputBufferQueue`的类型是`mOutputBufferQueue`, 因此:
+```
+// frameworks/av/media/codec2/hidl/client/output.cpp
+status_t OutputBufferQueue::outputBuffer(
+        const C2ConstGraphicBlock& block,
+        const BnGraphicBufferProducer::QueueBufferInput& input,
+        BnGraphicBufferProducer::QueueBufferOutput* output) {
+    ... ...
+    if (!getBufferQueueAssignment(block, &generation, &bqId, &bqSlot) ||
+        bqId == 0) {
+        ... ...
+        sp<IGraphicBufferProducer> outputIgbp = mIgbp;
+        ... ...
+        status_t status = attachToBufferQueue(
+                block, outputIgbp, outputGeneration, &bqSlot, syncMem);
+        ... ...
+        auto syncVar = syncMem ? syncMem->mem() : nullptr;
+        if(syncVar) {
+            syncVar->lock();
+            status = outputIgbp->queueBuffer(static_cast<int>(bqSlot),
+                                         input, output);
+            ... ...
+```
+`mIgbp`的类型是`IGraphicBufferProducer`, 其实现是`BpGraphicBufferProducer`, Binder对端是应用此前所持有的`BBQSurface`中的`BBQBufferQueueProducer`, 继承关系为:`IGraphicBufferProducer` -> `BnGraphicBufferProducer` -> `BufferQueueProducer` -> `BBQBufferQueueProducer`
