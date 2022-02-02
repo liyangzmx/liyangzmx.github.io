@@ -1,3 +1,7 @@
+- [本文配图](#本文配图)
+  - [整体类图](#整体类图)
+  - [Buffer流程](#buffer流程)
+  - [C2Buffer类图](#c2buffer类图)
 - [`VideoView.openVideo()`](#videoviewopenvideo)
   - [`MediaPlayer`的创建与配置](#mediaplayer的创建与配置)
   - [`mMediaPlayer.setOnPreparedListener()`](#mmediaplayersetonpreparedlistener)
@@ -53,6 +57,17 @@
         - [`MediaCodec::onReleaseOutputBuffer()`释放(并输出)视频帧](#mediacodeconreleaseoutputbuffer释放并输出视频帧)
           - [`Codec2Client::Component::queueToOutputSurface()`交换视频帧到应用的`BBQSurface`](#codec2clientcomponentqueuetooutputsurface交换视频帧到应用的bbqsurface)
 
+# 本文配图
+## 整体类图
+![Play](pics/Play.png)
+
+## Buffer流程
+![Buffer](pics/MediaCodec.png)
+
+## C2Buffer类图
+![C2Buffer](pics/Codec2_Graphic.png)
+
+# `VideoView.openVideo()`
 用户头一次在相册中点击视频时`MovieActivity`被创建, 因此:
 ```
 // packages/apps/Gallery2/src/com/android/gallery3d/app/MovieActivity.java
@@ -86,7 +101,6 @@
     }
 ```
 
-# `VideoView.openVideo()`
 `mVideoView`为上文提到的`VideoView`, 通过其`setVideoURI()`设置要播放的文件路径:
 ```
 // frameworks/base/core/java/android/widget/VideoView.java
