@@ -60,6 +60,10 @@ end box
 box CCodec
 participant CCodecBufferChannel
 participant CCodec
+' participant FlexOutputBuffers
+' participant OutputBuffersArray
+' participant BuffersArrayImpl
+' participant DummyContainerBuffer
 end box
 
 box HIDL
@@ -68,8 +72,22 @@ participant HidlListener
 participant Component
 end box
 
+->MediaCodec:getOutputBuffers()
+activate MediaCodec
+MediaCodec->MediaCodec:**kWhatGetBuffers**
+activate MediaCodec
+MediaCodec->CCodecBufferChannel:getOutputBufferArray()
+deactivate MediaCodec
+deactivate MediaCodec
+' CCodecBufferChannel->FlexOutputBuffers:toArrayMode()
+' FlexOutputBuffers->OutputBuffersArray:initialize()
+' OutputBuffersArray->BuffersArrayImpl:initialize()
+' BuffersArrayImpl-->DummyContainerBuffer:NEW
+
 ->MediaCodec:**kWhatStart**
+activate MediaCodec
 MediaCodec->Decoder:handleAnInputBuffer()
+deactivate MediaCodec
 activate Decoder
 Decoder->Decoder:onRequestInputBuffers()
 note left:**DecoderBase**
@@ -206,5 +224,25 @@ MediaCodec->CCodecBufferChannel:renderOutputBuffer()
 deactivate MediaCodec
 deactivate MediaCodec
 CCodecBufferChannel->Component:queueToOutputSurface()
+
+->MediaCodec:dequeueOutputBuffer()
+activate MediaCodec
+MediaCodec->MediaCodec:**kWhatReleaseOutputBuffer**
+activate MediaCodec
+MediaCodec->MediaCodec:handleDequeueOutputBuffer()
+activate MediaCodec
+MediaCodec->MediaCodec:dequeuePortBuffer()
+activate MediaCodec
+deactivate MediaCodec
+deactivate MediaCodec
+deactivate MediaCodec
+deactivate MediaCodec
+
+' ->MediaCodec:getOutputBuffer()
+' activate MediaCodec
+' MediaCodec->MediaCodec:getBufferAndFormat()
+' activate MediaCodec
+' deactivate MediaCodec
+' deactivate MediaCodec
 
 @enduml

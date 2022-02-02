@@ -62,7 +62,7 @@
 ![Play](pics/Play.png)
 
 ## Buffer流程
-![Buffer](pics/MediaCodec.png)
+![Buffer](out/MediaCodec/MediaCodec.png)
 
 ## C2Buffer类图
 ![C2Buffer](pics/Codec2_Graphic.png)
