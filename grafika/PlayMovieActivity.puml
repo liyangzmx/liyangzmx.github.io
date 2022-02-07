@@ -1,0 +1,191 @@
+@startuml PlayMovieActivity
+
+hide footbox
+skinparam {
+    Shadowing false
+    backgroundColor white
+    NoteFontColor #Black
+    NoteFontSize 16
+    NoteTextAlignment left
+    NoteBackgroundColor WhiteSmoke
+    NoteColor transparent
+    NoteBorderThickness 0
+    NoteBorderColor transparent
+    NoteBorderThickness 0
+    NoteShadowing false
+    ParticipantPadding 0
+    BoxPadding 20
+    dpi 96
+    ClassBackgroundColor transparent
+    ClassHeaderBackgroundColor lightgreen
+    ClassStereotypeFontColor transparent
+    SequenceBoxBordercolor sienna
+    SequenceBoxFontSize 24
+    SequenceBoxFontColor Black
+    SequenceBoxBackgroundColor WhiteSmoke
+    SequenceLifeLineBackgroundColor WhiteSmoke
+    SequenceMessageAlignment center
+    SequenceGroupHeaderFontColor White
+    SequenceGroupHeaderFontSize 20
+    SequenceGroupBackgroundColor DarkOliveGreen
+    SequenceGroupBodyBackgroundColor transparent
+    SequenceGroupBorderThickness 4
+    SequenceGroupBorderColor DarkOliveGreen
+    ' transparent
+    sequence {
+        ParticipantBackgroundColor WhiteSmoke
+        ParticipantBorderColor Gray
+        ParticipantFontStyle Bold
+        ParticipantFontSize 12
+        ParticipantPadding 0
+
+        LifeLineBorderColor DimGray
+        ArrowColor Black
+        ArrowThickness 0.8
+        ColorArrowSeparationSpace 30
+    }
+}
+
+participant DeferredLayerUpdater
+' participant SkiaOpenGLPipeline
+' participant CanvasContext
+' participant RenderProxy
+' participant HardwareRenderer
+participant TextureView
+participant TextureLayer
+participant TextureView
+participant SurfaceTexture
+participant Surface
+participant MediaCodec
+participant MediaExtractor
+participant MoviePlayer
+participant PlayTask
+participant PlayMovieActivity
+
+TextureView<--:draw()
+activate TextureView
+TextureView->TextureView:getTextureLayer()
+activate TextureView
+' create DeferredLayerUpdater
+TextureView-->DeferredLayerUpdater:NEW
+note left:HardwareRenderer.createTextureLayer()\n  HardwareRenderer.nCreateTextureLayer()\n    RenderProxy::createTextureLayer()\n      CanvasContext::createTextureLayer()\n        SkiaOpenGLPipeline::createTextureLayer()\n         DeferredLayerUpdater::DeferredLayerUpdater()
+
+create TextureLayer
+TextureView-->TextureLayer:NEW
+TextureLayer-->o TextureView:mLayer
+create SurfaceTexture
+TextureView-->SurfaceTexture:NEW
+SurfaceTexture-->o TextureView:mSurface
+TextureView->TextureLayer:setSurfaceTexture()
+SurfaceTexture-->o TextureLayer:[SET]
+TextureView->SurfaceTexture:setDefaultBufferSize()
+TextureView->SurfaceTexture:setOnFrameAvailableListener()
+TextureView->TextureLayer:setLayerPaint()
+deactivate TextureView
+deactivate TextureView
+
+PlayMovieActivity<--:onCreate()
+activate PlayMovieActivity
+TextureView-->o PlayMovieActivity:mTextureView
+deactivate PlayMovieActivity
+
+PlayMovieActivity<--:clickPlayStop()
+activate PlayMovieActivity
+PlayMovieActivity->TextureView:getSurfaceTexture()
+TextureView-->SurfaceTexture:RET
+
+create Surface
+PlayMovieActivity->Surface:NEW
+SurfaceTexture-->o Surface:mSurfaceTexture
+note left:[Abstract]
+create MoviePlayer
+PlayMovieActivity-->MoviePlayer:NEW
+activate MoviePlayer
+create MediaExtractor
+MoviePlayer-->MediaExtractor:NEW
+MoviePlayer->MediaExtractor:setDataSource()
+MoviePlayer->MoviePlayer:selectTrack()
+MoviePlayer->MediaExtractor:selectTrack()
+MoviePlayer->MediaExtractor:... ...
+note left: **getWidth()**\n**getHeight()**
+PlayMovieActivity->PlayMovieActivity:adjustAspectRatio()
+activate PlayMovieActivity
+PlayMovieActivity->TextureView:getTransform()
+PlayMovieActivity->TextureView:setTransform()
+
+create PlayTask
+PlayMovieActivity-->PlayTask:NEW
+MoviePlayer-->o PlayTask:mPlayer
+deactivate MoviePlayer
+PlayMovieActivity->PlayTask:execute()
+deactivate PlayMovieActivity
+deactivate PlayMovieActivity
+
+activate PlayTask
+PlayTask-->PlayTask:run()
+activate PlayTask
+PlayTask->MoviePlayer:play()
+deactivate PlayTask
+deactivate PlayTask
+activate MoviePlayer
+create MediaExtractor
+MoviePlayer-->MediaExtractor:NEW
+MoviePlayer->MediaExtractor:setDataSource()
+MoviePlayer->MoviePlayer:selectTrack()
+MoviePlayer->MediaExtractor:selectTrack()
+MoviePlayer->MediaExtractor:getTrackFormat()
+create MediaCodec
+MoviePlayer->MediaCodec:createDecoderByType()
+activate MediaCodec
+MediaCodec-->MediaCodec:NEW
+activate MediaCodec
+deactivate MediaCodec
+deactivate MediaCodec
+
+MoviePlayer->MediaCodec:configure()
+SurfaceTexture-->MediaCodec:[CONFIGURE]
+MoviePlayer->MediaCodec:start()
+MoviePlayer->MoviePlayer:doExtract()
+activate MoviePlayer
+MoviePlayer->MediaCodec:getInputBuffers()
+group loop
+MoviePlayer->MediaCodec:dequeueInputBuffer()
+MoviePlayer->MediaExtractor:readSampleData()
+MoviePlayer->MediaCodec:queueInputBuffer()
+deactivate MoviePlayer
+deactivate MoviePlayer
+activate MediaCodec
+end group
+
+MediaCodec-->Surface:[queueBuffer]
+Surface-->SurfaceTexture:postEventFromNative()
+note left:Surface::queueBuffer()\n  BufferQueueProducer::queueBuffer()\n    ConsumerBase::onFrameAvailable()\n      JNISurfaceTextureContext::onFrameAvailable()\n        SurfaceTexture.postEventFromNative()
+SurfaceTexture->TextureView:OnFrameAvailableListener()
+activate TextureView
+TextureView->TextureView:updateLayer()
+TextureView->TextureView:invalidate()
+note left:**WAIT DRAW...**
+TextureView-->TextureView:draw()
+activate TextureView
+TextureView->TextureView:applyUpdate()
+activate TextureView
+TextureView->TextureLayer:prepare()
+TextureView->TextureLayer:updateSurfaceTexture()
+deactivate TextureView
+deactivate TextureView
+deactivate TextureView
+activate TextureLayer
+TextureLayer->TextureLayer:nUpdateSurfaceTexture()
+activate TextureLayer
+TextureLayer->DeferredLayerUpdater:updateTexImage()
+deactivate TextureLayer
+deactivate TextureLayer
+
+MediaCodec->Surface:unlockCanvasAndPost()
+deactivate MediaCodec
+activate Surface
+Surface-->DeferredLayerUpdater:apply()
+note left:FrameRenderRequest.syncAndDraw()\n  HardwareRenderer.syncAndDrawFrame()\n    HardwareRenderer.nSyncAndDrawFrame()\n      RenderProxy::syncAndDrawFrame()\n        DrawFrameTask::drawFrame()\n          DrawFrameTask::run()\n            DrawFrameTask::syncFrameState()\n              DeferredLayerUpdater::apply()
+deactivate Surface
+
+@enduml
