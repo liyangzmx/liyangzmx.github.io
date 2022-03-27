@@ -1,0 +1,209 @@
+@startuml Amlogic_TV
+
+hide footbox
+skinparam {
+    ' defaultFontName Abyssinica SIL
+    Shadowing false
+    backgroundColor white
+    NoteFontColor #Black
+    NoteFontSize 16
+    NoteTextAlignment left
+    NoteBackgroundColor WhiteSmoke
+    NoteColor transparent
+    NoteBorderThickness 0
+    NoteBorderColor transparent
+    NoteBorderThickness 0
+    NoteShadowing false
+    ParticipantPadding 0
+    BoxPadding 20
+    dpi 96
+    ClassBackgroundColor transparent
+    ClassHeaderBackgroundColor lightgreen
+    ClassStereotypeFontColor transparent
+    SequenceBoxBordercolor WhiteSmoke
+    SequenceBoxFontSize 24
+    SequenceBoxFontColor Black
+    SequenceBoxBackgroundColor WhiteSmoke
+    SequenceLifeLineBackgroundColor WhiteSmoke
+    SequenceMessageAlignment center
+    SequenceGroupHeaderFontColor White
+    SequenceGroupHeaderFontSize 20
+    SequenceGroupBackgroundColor DarkOliveGreen
+    SequenceGroupBodyBackgroundColor transparent
+    SequenceGroupBorderThickness 4
+    SequenceGroupBorderColor DarkOliveGreen
+    ' transparent
+    sequence {
+        ParticipantBackgroundColor WhiteSmoke
+        ParticipantBorderColor Gray
+        ParticipantFontStyle Bold
+        ParticipantFontSize 12
+        ParticipantPadding 0
+
+        LifeLineBorderColor DimGray
+        ArrowColor Black
+        ArrowThickness 0.8
+        ColorArrowSeparationSpace 30
+    }
+}
+
+box TvView
+participant TvView
+participant Session
+end box
+
+box Frameworks
+participant DTVSessionImpl
+participant ATVInputService
+' participant Hardware
+' participant TvInputHardwareImpl
+' participant TvInputHal
+' participant TvControlManager
+participant DTVMonitor
+participant DTVEpgScanner
+' end box
+
+' box native
+participant JTvInputHal
+participant CTvEpg
+participant CDTVEpgScanner
+participant TvServerHidlClient
+end box
+
+box tvserver #EFEFFF
+' participant DroidTvServer
+participant DroidTvServiceIntf
+participant TvInput
+participant CTv
+' participant CAv
+participant CTvin
+participant CFrontEnd
+participant CTvRrt
+participant CTvEas
+end box
+
+box libtv
+end box
+
+box HAL #EFEFFF
+participant tv_input_device_t
+end box
+
+->TvView:setSessionSurface()
+TvView->Session:setSurface()
+Session-->DTVSessionImpl:onSetSurface()
+DTVSessionImpl->ATVInputService:**MSG_DO_SET_SURFACE**
+activate ATVInputService
+ATVInputService->ATVInputService:doSetSurface()
+activate ATVInputService
+
+' ATVInputService->Hardware:setSurface()
+' Hardware->TvInputHardwareImpl:setSurface()
+' TvInputHardwareImpl->TvInputHal:addOrUpdateStream()
+' TvInputHal->JTvInputHal:addOrUpdateStream()
+' JTvInputHal-->TvInput:openStream()
+ATVInputService-->TvInput:openStream()
+note left:Hardware.setSurface()\n\
+    TvInputHardwareImpl.setSurface()\n\
+        TvInputHal.addOrUpdateStream()\n\
+            JTvInputHal::addOrUpdateStream()\n\
+                TvInput::openStream()
+TvInput->tv_input_device_t:**open_stream**
+
+ATVInputService->ATVInputService:doTune()
+activate ATVInputService
+ATVInputService->ATVInputService:startTvPlay()
+ATVInputService->ATVInputService:doTuneFinish()
+activate ATVInputService
+ATVInputService->DTVSessionImpl:doPlay()
+deactivate ATVInputService
+deactivate ATVInputService
+deactivate ATVInputService
+deactivate ATVInputService
+activate DTVSessionImpl
+DTVSessionImpl->DTVSessionImpl:tryPlayProgram()
+activate DTVSessionImpl
+
+DTVSessionImpl->DTVSessionImpl:setMonitor()
+activate DTVSessionImpl
+DTVSessionImpl->DTVMonitor:reset()
+deactivate DTVSessionImpl
+deactivate DTVSessionImpl
+DTVMonitor->DTVEpgScanner:setSource()
+DTVEpgScanner->CTvEpg:Init()
+CTvEpg->CDTVEpgScanner:epg_create()
+activate CDTVEpgScanner
+note over CDTVEpgScanner:**PROCESSING...**
+CDTVEpgScanner->CDTVEpgScanner:epg_table_callback()
+note left:**AM_EPG_TAB_SDT**
+activate CDTVEpgScanner
+CDTVEpgScanner->CDTVEpgScanner:epg_sdt_update()
+activate CDTVEpgScanner
+CDTVEpgScanner->CDTVEpgScanner:epg_evt_callback()
+activate CDTVEpgScanner
+CDTVEpgScanner->CDTVEpgScanner:epg_on_event()
+note left:**AM_EPG_EVT_UPDATE_PROGRAM_AV**
+activate CDTVEpgScanner
+CDTVEpgScanner->DTVEpgScanner:onEvent()
+deactivate CDTVEpgScanner
+deactivate CDTVEpgScanner
+
+CDTVEpgScanner->CDTVEpgScanner:SDT_Update()
+activate CDTVEpgScanner
+CDTVEpgScanner->DTVEpgScanner:CDTVEpgScanner()
+deactivate CDTVEpgScanner
+deactivate CDTVEpgScanner
+deactivate CDTVEpgScanner
+deactivate CDTVEpgScanner
+activate DTVEpgScanner
+DTVEpgScanner->DTVMonitor:**MSG_MONITOR_EVENT**
+deactivate DTVEpgScanner
+activate DTVMonitor
+DTVMonitor->DTVMonitor:resolveMonitorEvent()
+activate DTVMonitor
+DTVMonitor->DTVSessionImpl:**EVENT_PROGRAM_AV_UPDATE**
+deactivate DTVMonitor
+deactivate DTVMonitor
+activate DTVSessionImpl
+DTVSessionImpl->DTVSessionImpl:switchToSourceInput()
+activate DTVSessionImpl
+deactivate DTVSessionImpl
+deactivate DTVSessionImpl
+
+
+' DTVSessionImpl->TvControlManager:TvSetFrontEnd()
+DTVSessionImpl->TvServerHidlClient:tvSetFrontEnd()
+note left:TvControlManager.TvSetFrontEnd()\n\
+    TvServerHidlClient.tvSetFrontEnd()
+deactivate DTVSessionImpl
+deactivate DTVSessionImpl
+deactivate DTVSessionImpl
+deactivate DTVSessionImpl
+' TvControlManager->TvServerHidlClient:tvSetFrontEnd()
+' TvServerHidlClient-->DroidTvServer:tvSetFrontEnd()
+' DroidTvServer->DroidTvServiceIntf:tvSetFrontEnd()
+TvServerHidlClient->DroidTvServiceIntf:tvSetFrontEnd()
+note left:DroidTvServer.tvSetFrontEnd()\n\
+    DroidTvServiceIntf.tvSetFrontEnd()
+activate DroidTvServiceIntf
+DroidTvServiceIntf->CTv:setFrontEnd()
+deactivate DroidTvServiceIntf
+activate CTv
+CTv->CTv:CAv::EnableVideoBlackout()
+CTv->CTvin:Tvin_StopDecoder()
+CTv->CTvin:AFE_SetCVBSStd()
+CTv->CFrontEnd:Open()
+CTv->CFrontEnd:setMode()
+CTv->CFrontEnd:setPara()
+CTv->CFrontEnd:fineTune()
+CTv->CTv:Tv_RrtUpdate()
+activate CTv
+CTv->CTvRrt:StartRrtUpdate()
+deactivate CTv
+CTv->CTv:Tv_Easupdate()
+activate CTv
+CTv->CTvEas:StartEasUpdate()
+deactivate CTv
+deactivate CTv
+
+@enduml
