@@ -48,81 +48,180 @@ skinparam {
 }
 
 box NuPlayer
-participant GenericSource
-participant AudioOutput
+' participant GenericSource
+' participant AudioOutput
+participant NuPlayer
 participant Renderer
 participant Decoder
 end box
 
+box StageFright
 box MediaCodec
 participant MediaCodec
-participant BufferCallback
+' participant BufferCallback
 end box
 
 box CCodec
-participant CCodecBufferChannel
 participant CCodec
+participant CCodecBufferChannel
+' participant Codec2Client
+end box
 end box
 
-box HIDL
-participant ClientListener
-participant HidlListener
+' box HIDL
+' participant ClientListener
+' participant HidlListener
+' end box
+
+' box AAC Component #EFEFFF
+box media.swcodec #EFEFFF
+' participant InputBufferManager
+' participant C2Buffer
+' participant CachedConfigurable
 participant Component
+' participant "Component" as Component
+participant "[SimpleC2Component]\nC2SoftAacDec" as C2SoftAacDec
+' participant C2SoftAacDecFactory
 end box
 
-box AAC Component
-participant "Component" as CComponent
-participant InputBufferManager
-participant C2Buffer
-participant "[SimpleC2Component]\nC2SoftAacDec" as C2SoftAacDec
-end box
+' participant _C2BlockPoolCache
+' participant C2PlatformAllocatorStoreImpl
+' participant C2ComponentStore
+' participant C2PlatformComponentStore
+' participant ComponentLoader
+' participant ComponentModule
+' end box
+
 
 ' box libAACdec
 ' participant libAACdec
 ' end box
 
-' ->MediaCodec:getOutputBuffers()
-' activate MediaCodec
-' MediaCodec->MediaCodec:**kWhatGetBuffers**
-' activate MediaCodec
-' MediaCodec->CCodecBufferChannel:getOutputBufferArray()
-' deactivate MediaCodec
-' deactivate MediaCodec
-' ' CCodecBufferChannel->FlexOutputBuffers:toArrayMode()
-' ' FlexOutputBuffers->OutputBuffersArray:initialize()
-' ' OutputBuffersArray->BuffersArrayImpl:initialize()
-' ' BuffersArrayImpl-->DummyContainerBuffer:NEW
+->MediaCodec:getOutputBuffers()
+activate MediaCodec
+MediaCodec->MediaCodec:**kWhatGetBuffers**
+activate MediaCodec
+create CCodecBufferChannel
+MediaCodec->CCodecBufferChannel:getOutputBufferArray()
+deactivate MediaCodec
+deactivate MediaCodec
+' CCodecBufferChannel->FlexOutputBuffers:toArrayMode()
+' FlexOutputBuffers->OutputBuffersArray:initialize()
+' OutputBuffersArray->BuffersArrayImpl:initialize()
+' BuffersArrayImpl-->DummyContainerBuffer:NEW
 
-' ->ComponentStore:createComponent_1_2()
-' ComponentStore->C2PlatformComponentStore:createComponent()
-' activate C2PlatformComponentStore
-' C2PlatformComponentStore->C2PlatformComponentStore:findComponent()
-' activate C2PlatformComponentStore
-' C2PlatformComponentStore->ComponentLoader:fetchModule()
-' deactivate C2PlatformComponentStore
-' deactivate C2PlatformComponentStore
-' ComponentLoader->ComponentModule:init()
-' ComponentModule->ComponentModule:createInterface()
-' ComponentModule->C2SoftAacDecFactory:createInterface()
-' C2SoftAacDecFactory->C2SoftAacDec:IntfImpl::IntfImpl()
 
-InputBufferManager<-InputBufferManager:main()
-activate InputBufferManager
-InputBufferManager->InputBufferManager:processNotifications()
-activate InputBufferManager
-note over InputBufferManager:**WATING NOTIFICATIOn**
-
-->Decoder:DecoderBase::configure()
+->NuPlayer:onStart()
+activate NuPlayer
+create Renderer
+NuPlayer->Renderer:NEW
+NuPlayer->NuPlayer:postScanSources()
+activate NuPlayer
+NuPlayer->NuPlayer:**kWhatScanSources**
+activate NuPlayer
+NuPlayer->NuPlayer:instantiateDecoder()
+activate NuPlayer
+NuPlayer->Decoder:DecoderBase::init()
+NuPlayer->Decoder:DecoderBase::configure()
+deactivate NuPlayer
+deactivate NuPlayer
+deactivate NuPlayer
+deactivate NuPlayer
 activate Decoder
 Decoder->Decoder:**kWhatConfigure**
 activate Decoder
 Decoder->Decoder:onConfigure()
 activate Decoder
+
+Decoder->MediaCodec:CreateByType()
+activate MediaCodec
+MediaCodec->MediaCodec:init()
+activate MediaCodec
+MediaCodec->MediaCodec:**kWhatInit**
+activate MediaCodec
+create CCodec
+MediaCodec->CCodec:CCodec::initiateAllocateComponent()
+deactivate MediaCodec
+deactivate MediaCodec
+deactivate MediaCodec
+activate CCodec
+CCodec->CCodec:**kWhatAllocate**
+activate CCodec
+CCodec->CCodec:init()
+activate CCodec
+' create Codec2Client
+' CCodec->Codec2Client:CreateComponentByName()
+
+' activate Codec2Client
+' Codec2Client->Codec2Client:createComponent()
+' activate Codec2Client
+' create C2ComponentStore
+' Codec2Client->C2ComponentStore:createComponent_1_2()
+' activate C2ComponentStore
+' create C2PlatformComponentStore
+' C2ComponentStore->C2PlatformComponentStore:createComponent()
+' deactivate C2ComponentStore
+' activate C2PlatformComponentStore
+' C2PlatformComponentStore->C2PlatformComponentStore:findComponent()
+' activate C2PlatformComponentStore
+' create ComponentLoader
+' C2PlatformComponentStore->ComponentLoader:fetchModule()
+' deactivate C2PlatformComponentStore
+' deactivate C2PlatformComponentStore
+' create ComponentModule
+' ComponentLoader->ComponentModule:init()
+' ComponentModule->ComponentModule:createInterface()
+' ComponentModule->C2SoftAacDecFactory:createInterface()
+' create C2SoftAacDecFactory
+' Codec2Client-->C2SoftAacDecFactory:createInterface()
+' create C2SoftAacDec
+' create C2SoftAacDec
+
+' create Component
+CCodec->CCodec:Codec2Client::CreateComponentByName()
+activate CCodec
+CCodec->CCodec:Codec2Client::createComponent()
+activate CCodec
+CCodec-->Component:NEW
+note left:C2SoftAacDecFactory::createInterface()\n\
+    C2ComponentStore::createComponent_1_2()\n\
+        Component::Component()
+
+CCodec-->C2SoftAacDec:IntfImpl::IntfImpl()
+note left:C2SoftAacDecFactory::createInterface()\n\
+    C2ComponentStore::createComponent_1_2()\n\
+        C2PlatformComponentStore::createComponent()\n\
+            C2PlatformComponentStore::findComponent()\n\
+                ComponentLoader::fetchModule()\n\
+                    ComponentModule::init()\n\
+                        ComponentModule::createInterface()\n\
+                            C2SoftAacDecFactory::createInterface()
+
+CCodec-->Component:interfaceChain()
+note left:Codec2Client::Component::Component()\n\
+    IComponent::castFrom()\n\
+        android::hardware::details::castInterface()\n\
+            android::hardware::details::canCastInterface()\n\
+                BpHwComponent::interfaceChain()
+
+CCodec-->Component:linkToDeath()
+note left:Component::setDeathListener()\n\
+    Component::linkToDeath()
+deactivate CCodec
+deactivate CCodec
+deactivate CCodec
+deactivate CCodec
+deactivate CCodec
+' deactivate Codec2Client
+' deactivate Codec2Client
+' C2SoftAacDecFactory->C2SoftAacDec:IntfImpl::IntfImpl()
+
+
 Decoder->MediaCodec:**kWhatStart**
 deactivate Decoder
 deactivate Decoder
 deactivate Decoder
-group START
+' group START
 activate MediaCodec
 MediaCodec->CCodec:initiateStart()
 activate CCodec
@@ -130,11 +229,14 @@ CCodec->CCodec:kWhatStart
 activate CCodec
 CCodec->CCodec:start()
 activate CCodec
-CCodec->Component:start()
-Component->CComponent:start()
-CComponent->C2SoftAacDec:start()
+' create CachedConfigurable
+' CachedConfigurable->o Component:mInterface.mConfigurable
+CCodec-->Component:start()
+activate Component
+Component->C2SoftAacDec:start()
+deactivate Component
 activate C2SoftAacDec
-C2SoftAacDec->C2SoftAacDec:kWhatInit
+C2SoftAacDec->C2SoftAacDec:**kWhatInit**
 activate C2SoftAacDec
 C2SoftAacDec->C2SoftAacDec:initDecoder()
 activate C2SoftAacDec
@@ -142,9 +244,51 @@ deactivate C2SoftAacDec
 deactivate C2SoftAacDec
 deactivate C2SoftAacDec
 CCodec->CCodecBufferChannel:start()
-end group
+activate CCodecBufferChannel
+' end group
+CCodecBufferChannel-->Component:getInterface()
+Component-->CCodecBufferChannel:mInterfac->\n\tmConfigurable\n\t[CachedConfigurable]
+CCodecBufferChannel-->Component:mInterfac->\n\tmConfigurable\n\t[CachedConfigurable]->\n\tquery()
+CCodecBufferChannel-->Component:mInterfac->\n\tmConfigurable\n\t[CachedConfigurable]->\n\tconfig()
+CCodecBufferChannel-->Component:setOutputSurface()
 
-group requestInitialInputBuffers
+CCodecBufferChannel-->Component:createBlockPool()
+deactivate CCodecBufferChannel
+activate Component
+Component-->Component:CreateCodec2BlockPool()
+activate Component
+' create _C2BlockPoolCache
+' Component->_C2BlockPoolCache:createBlockPool()
+Component-->Component:querySupportedValues()
+activate Component
+note left #EFEFFF:_C2BlockPoolCache:createBlockPool()\n\
+    _C2BlockPoolCache:GetCodec2PlatformAllocatorStore()\n\
+        C2PlatformAllocatorStoreImpl:setComponentStore()\n\
+            C2PlatformAllocatorStoreImpl:UseComponentStoreForIonAllocator()\n\
+                C2ComponentStore:querySupportedValues_sm()\n\
+                    Component:querySupportedValues()
+deactivate Component
+deactivate Component
+' Component-->CachedConfigurable:NEW
+deactivate Component
+' activate _C2BlockPoolCache
+' _C2BlockPoolCache->_C2BlockPoolCache:GetCodec2PlatformAllocatorStore()
+' activate _C2BlockPoolCache
+' create C2PlatformAllocatorStoreImpl
+' _C2BlockPoolCache->C2PlatformAllocatorStoreImpl:setComponentStore()
+' deactivate _C2BlockPoolCache
+' deactivate _C2BlockPoolCache
+' activate C2PlatformAllocatorStoreImpl
+' C2PlatformAllocatorStoreImpl->C2PlatformAllocatorStoreImpl:UseComponentStoreForIonAllocator()
+' activate C2PlatformAllocatorStoreImpl
+' C2PlatformAllocatorStoreImpl->C2ComponentStore:querySupportedValues_sm()
+' deactivate C2PlatformAllocatorStoreImpl
+' deactivate C2PlatformAllocatorStoreImpl
+' activate C2ComponentStore
+' C2ComponentStore-->Component:querySupportedValues()
+' deactivate C2ComponentStore
+
+' group requestInitialInputBuffers
 CCodec->CCodecBufferChannel:requestInitialInputBuffers()
 deactivate CCodec
 deactivate CCodec
@@ -152,37 +296,56 @@ deactivate CCodec
 activate CCodecBufferChannel
 CCodecBufferChannel->CCodecBufferChannel:queueInputBufferInternal()
 activate CCodecBufferChannel
-CCodecBufferChannel->Component:queue()
+CCodecBufferChannel-->Component:queue()
 deactivate CCodecBufferChannel
 deactivate CCodecBufferChannel
-Component->CComponent:queue
-CComponent->C2SoftAacDec:kWhatProcess
+Component->C2SoftAacDec:**kWhatProcess**
 activate C2SoftAacDec
 C2SoftAacDec->C2SoftAacDec:processQueue()
 activate C2SoftAacDec
-end group
+' end group
 
-group CB_INPUT_AVAILABLE
-C2SoftAacDec->C2Buffer::~Impl::~Impl
+' InputBufferManager<-InputBufferManager:main()
+' activate InputBufferManager
+' InputBufferManager->InputBufferManager:processNotifications()
+' activate InputBufferManager
+' note over InputBufferManager:**WATING NOTIFICATIOn**
+
+' group CB_INPUT_AVAILABLE
+' create C2Buffer
+' C2SoftAacDec->C2Buffer::~Impl::~Impl
 C2SoftAacDec->C2SoftAacDec:process()
 activate C2SoftAacDec
-C2Buffer->InputBufferManager:_onBufferDestroyed()
-InputBufferManager-->HidlListener:onInputBuffersReleased()
-deactivate InputBufferManager
-deactivate InputBufferManager
-HidlListener->ClientListener:onInputBufferDone()
-ClientListener->CCodec:onInputBufferDone()
+' C2Buffer->InputBufferManager:_onBufferDestroyed()
+' create HidlListener
+' InputBufferManager-->HidlListener:onInputBuffersReleased()
+' InputBufferManager-->CCodec:onInputBuffersReleased()
+C2SoftAacDec-->CCodec:onInputBuffersReleased()
+note left:C2Buffer::~Impl::~Impl()\n\
+    HidlListener::onInputBuffersReleased()\n\
+        ClientListener::onInputBufferDone()\n\
+            Codec::onInputBufferDone()
+' deactivate InputBufferManager
+' deactivate InputBufferManager
+' create ClientListener
+' HidlListener->ClientListener:onInputBufferDone()
+' ClientListener->CCodec:onInputBufferDone()
+activate CCodec
 CCodec->CCodecBufferChannel:onInputBufferDone()
+deactivate CCodec
 activate CCodecBufferChannel
 CCodecBufferChannel->CCodecBufferChannel:feedInputBufferIfAvailable()
 activate CCodecBufferChannel
 CCodecBufferChannel->CCodecBufferChannel:feedInputBufferIfAvailableInternal()
 activate CCodecBufferChannel
-CCodecBufferChannel->BufferCallback:onInputBufferAvailable()
+' CCodecBufferChannel->BufferCallback:onInputBufferAvailable()
+CCodecBufferChannel->MediaCodec:**kWhatFillThisBuffer**
+note left:BufferCallback::onInputBufferAvailable()\n\
+MediaCodec:**kWhatFillThisBuffer**
 deactivate CCodecBufferChannel
 deactivate CCodecBufferChannel
 deactivate CCodecBufferChannel
-BufferCallback->MediaCodec:**kWhatFillThisBuffer**
+' BufferCallback->MediaCodec:**kWhatFillThisBuffer**
 activate MediaCodec
 MediaCodec->MediaCodec:onInputBufferAvailable()
 activate MediaCodec
@@ -204,8 +367,8 @@ note left:**Decoder**
 activate Decoder
 Decoder->Decoder:Decoder::fetchInputData()
 activate Decoder
-end group
-Decoder->GenericSource:dequeueAccessUnit()
+' end group
+<-Decoder:GenericSource::dequeueAccessUnit()
 deactivate Decoder
 Decoder->Decoder:onInputBufferFetched()
 activate Decoder
@@ -217,8 +380,79 @@ deactivate Decoder
 deactivate Decoder
 activate MediaCodec
 
-group DECODEING
-C2SoftAacDec->C2SoftAacDec:aacDecoder_DecodeFrame()
+
+
+->NuPlayer:seekTo\n\tAsync()
+activate NuPlayer
+NuPlayer->NuPlayer:**kWhatSeek**
+activate NuPlayer
+NuPlayer->NuPlayer:processDeferredActions()
+activate NuPlayer
+NuPlayer->NuPlayer:FlushDecoderAction::execute()
+activate NuPlayer
+NuPlayer->NuPlayer:performDecoderFlush()
+activate NuPlayer
+NuPlayer->NuPlayer:flushDecoder()
+activate NuPlayer
+NuPlayer->MediaCodec:flush()
+deactivate NuPlayer
+deactivate NuPlayer
+deactivate NuPlayer
+
+activate MediaCodec
+MediaCodec->MediaCodec:**kWhatFlush**
+activate MediaCodec
+MediaCodec->CCodec:signalFlush()
+deactivate MediaCodec
+deactivate MediaCodec
+activate CCodec
+CCodec->CCodec:**kWhatFlush**
+activate CCodec
+CCodec->CCodec:flush()
+activate CCodec
+CCodec-->Component:flush()
+
+CCodec->CCodecBufferChannel:flush()
+
+CCodec->MediaCodec:**kWhatFlushCompleted**
+note right:CodecCallback::onFlushCompleted()\n\
+MediaCodec::onMessageReceived(**kWhatCodecNotify**)\n\
+**kWhatFlushCompleted**
+deactivate CCodec
+deactivate CCodec
+deactivate CCodec
+' activate MediaCodec
+' MediaCodec->CCodec:signalResume()
+' deactivate MediaCodec
+
+
+NuPlayer->NuPlayer:SeekAction::execute()
+activate NuPlayer
+NuPlayer->NuPlayer:performSeek()
+activate NuPlayer
+<-NuPlayer:mSource->\n\tseekTo()
+activate NuPlayer
+deactivate NuPlayer
+deactivate NuPlayer
+deactivate NuPlayer
+
+NuPlayer->NuPlayer:ResumeDecoderAction()
+activate NuPlayer
+NuPlayer->NuPlayer:performResumeDecoders()
+activate NuPlayer
+NuPlayer->CCodec:signalResume()
+deactivate NuPlayer
+deactivate NuPlayer
+deactivate NuPlayer
+deactivate NuPlayer
+deactivate NuPlayer
+activate CCodec
+CCodec->CCodecBufferChannel:start()
+deactivate CCodec
+
+
+' group DECODEING
+C2SoftAacDec->C2SoftAacDec:aac\n\tDecodeFrame()
 ' C2SoftAacDec->libAACdec:aacDecoder_DecodeFrame()
 ' activate libAACdec
 ' libAACdec->
@@ -226,19 +460,19 @@ C2SoftAacDec->C2SoftAacDec:aacDecoder_DecodeFrame()
 activate C2SoftAacDec
 note over C2SoftAacDec:**DECODEING...**
 deactivate C2SoftAacDec
-C2SoftAacDec->C2SoftAacDec:outputDelayRingBufferPutSamples()
-C2SoftAacDec->C2SoftAacDec:outputDelayRingBufferGetSamples()
-group NO_EOS
+C2SoftAacDec->C2SoftAacDec:outputDelayRingBuffer\n\tPutSamples()
+C2SoftAacDec->C2SoftAacDec:outputDelayRingBuffer\n\tGetSamples()
+' group NO_EOS
 C2SoftAacDec->C2SoftAacDec:drainRingBuffer()
 activate C2SoftAacDec
-C2SoftAacDec->C2SoftAacDec:outputDelayRingBufferSamplesAvailable()
+C2SoftAacDec->C2SoftAacDec:outputDelayRingBuffer\n\tSamplesAvailable()
 activate C2SoftAacDec
 C2SoftAacDec->C2SoftAacDec:drainRingBuffer()
 activate C2SoftAacDec
 deactivate C2SoftAacDec
 deactivate C2SoftAacDec
 deactivate C2SoftAacDec
-end group
+' end group
 C2SoftAacDec->C2SoftAacDec:drainInternal()
 activate C2SoftAacDec
 C2SoftAacDec->C2SoftAacDec:drainRingBuffer()
@@ -246,42 +480,50 @@ activate C2SoftAacDec
 deactivate C2SoftAacDec
 deactivate C2SoftAacDec
 deactivate C2SoftAacDec
-end group
+' end group
 
-group queueInputBuffer
+' group queueInputBuffer
 MediaCodec->CCodecBufferChannel:queueInputBuffer()
 deactivate MediaCodec
 deactivate MediaCodec
 activate CCodecBufferChannel
 CCodecBufferChannel->CCodecBufferChannel:queueInputBufferInternal()
 activate CCodecBufferChannel
-CCodecBufferChannel->Component:queue()
+CCodecBufferChannel-->Component:queue()
 deactivate CCodecBufferChannel
 deactivate CCodecBufferChannel
-Component->CComponent:queue()
-CComponent->C2SoftAacDec:kWhatProcess
-end group
+Component->C2SoftAacDec:**kWhatProcess**
+' end group
 note over C2SoftAacDec:**DECODEING...**
 
-C2SoftAacDec->CComponent:onWorkDone()
+C2SoftAacDec-->Component:onWorkDone()
 deactivate C2SoftAacDec
 deactivate C2SoftAacDec
 
-group CB_OUTPUT_AVAILABLE
-CComponent-->HidlListener:onWorkDone()
-HidlListener->ClientListener:onWorkDone()
-ClientListener->CCodec:**kWhatWorkDone**
+' group CB_OUTPUT_AVAILABLE
+' Component-->HidlListener:onWorkDone()
+' HidlListener->ClientListener:onWorkDone()
+' ClientListener->CCodec:**kWhatWorkDone**
+Component-->CCodec:**kWhatWorkDone**
+note right:HidlListener::onWorkDone()\n\
+ClientListener::onWorkDone()\n\
+CCodec:**kWhatWorkDone**
+activate CCodec
 CCodec->CCodecBufferChannel:onWorkDone()
+deactivate CCodec
 activate CCodecBufferChannel
 CCodecBufferChannel->CCodecBufferChannel:handleWork()
 activate CCodecBufferChannel
 CCodecBufferChannel->CCodecBufferChannel:sendOutputBuffers()
 activate CCodecBufferChannel
-CCodecBufferChannel->BufferCallback:onOutputBufferAvailable()
+' CCodecBufferChannel->BufferCallback:onOutputBufferAvailable()
+CCodecBufferChannel->MediaCodec:**kWhatDrainThisBuffer**
+note left:BufferCallback::onOutputBufferAvailable()\n\
+MediaCodec:**kWhatDrainThisBuffer**
 deactivate CCodecBufferChannel
 deactivate CCodecBufferChannel
 deactivate CCodecBufferChannel
-BufferCallback->MediaCodec:**kWhatDrainThisBuffer**
+' BufferCallback->MediaCodec:**kWhatDrainThisBuffer**
 activate MediaCodec
 MediaCodec->MediaCodec:onOutputBufferAvailable()
 activate MediaCodec
@@ -298,13 +540,13 @@ Decoder->Renderer:queueBuffer()
 deactivate Decoder
 deactivate Decoder
 activate Renderer
-end group
+' end group
 Renderer->Renderer:**kWhatQueueBuffer**
 activate Renderer
 Renderer->Renderer:onQueueBuffer()
 activate Renderer
 
-group Render Audio
+' group Render Audio
 Renderer->Renderer:postDrainVideoQueue()
 activate Renderer
 Renderer->Renderer:kWhatDrainAudioQueue
@@ -315,8 +557,8 @@ Renderer->Renderer:**kWhatDrainAudioQueue**
 activate Renderer
 Renderer->Renderer:onDrainAudioQueue()
 activate Renderer
-end group
-Renderer->AudioOutput:write()
+' end group
+<-Renderer:AudioOutput::write()
 deactivate Renderer
 deactivate Renderer
 deactivate Renderer
@@ -325,7 +567,7 @@ deactivate Renderer
 
 note over Renderer:**A/V SYNC**
 
-group Render Video
+' group Render Video
 Renderer->Renderer:postDrainVideoQueue()
 activate Renderer
 Renderer->Renderer:**kWhatDrainVideoQueue**
@@ -357,7 +599,7 @@ note over MediaCodec:**...**
 ' MediaCodec->CCodecBufferChannel:renderOutputBuffer()
 ' deactivate MediaCodec
 ' deactivate MediaCodec
-' CCodecBufferChannel->Component:queueToOutputSurface()
+' CCodecBufferChannel-->Component:queueToOutputSurface()
 
 
 
@@ -433,11 +675,11 @@ note over MediaCodec:**...**
 ' deactivate C2SoftAacDec
 ' deactivate C2SoftAacDec
 
-' C2SoftAacDec->CComponent:onWorkDone()
+' C2SoftAacDec-->Component:onWorkDone()
 ' deactivate C2SoftAacDec
 ' deactivate C2SoftAacDec
 
-' CComponent-->HidlListener:onWorkDone()
+' Component-->HidlListener:onWorkDone()
 ' HidlListener->ClientListener:onWorkDone()
 ' ClientListener->CCodec:**kWhatWorkDone**
 ' CCodec->CCodecBufferChannel:onWorkDone()
@@ -480,12 +722,12 @@ MediaCodec->CCodecBufferChannel:renderOutputBuffer()
 deactivate MediaCodec
 deactivate MediaCodec
 deactivate MediaCodec
-CCodecBufferChannel->Component:queueToOutputSurface()
-end group
+CCodecBufferChannel-->Component:queueToOutputSurface()
+' end group
 
 ->MediaCodec:dequeueOutputBuffer()
 activate MediaCodec
-group dequeueOutputBuffer
+' group dequeueOutputBuffer
 MediaCodec->MediaCodec:**kWhatReleaseOutputBuffer**
 activate MediaCodec
 MediaCodec->MediaCodec:handleDequeueOutputBuffer()
@@ -496,7 +738,7 @@ deactivate MediaCodec
 deactivate MediaCodec
 deactivate MediaCodec
 deactivate MediaCodec
-end group
+' end group
 
 ' ->MediaCodec:getOutputBuffer()
 ' activate MediaCodec
