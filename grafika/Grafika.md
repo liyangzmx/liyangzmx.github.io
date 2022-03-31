@@ -79,6 +79,9 @@
 `PlayTask`的`execute()`启动内部线程`Thread`, `Thread`将调用`PlayTask`(类型为`Runnable`)的`run()`方法:
 ```
 // src/main/java/com/android/grafika/MoviePlayer.java
+public class MoviePlayer {
+    public static class PlayTask implements Runnable {
+        ... ...
         @Override
         public void run() {
             try {
@@ -87,4 +90,34 @@
         }
 
     public void play() throws IOException {
+        try {
+            extractor = new MediaExtractor();
+            extractor.setDataSource(mSourceFile.toString());
+            int trackIndex = selectTrack(extractor);
+            ... ...
+            extractor.selectTrack(trackIndex);
+            MediaFormat format = extractor.getTrackFormat(trackIndex);
+            String mime = format.getString(MediaFormat.KEY_MIME);
+            decoder = MediaCodec.createDecoderByType(mime);
+            decoder.configure(format, mOutputSurface, null, 0);
+            decoder.start();
+            doExtract(extractor, trackIndex, decoder, mFrameCallback);
+        }
+        ... ...
+    }
+```
+再次创建`MediaExtractor`, 和此前的目的不一样. `setDataSource`后, 获取`MediaExtractor`中的`MediaFormat`, 提取`video`的`KEY_MIME`信息, 用于后续`MediaCodec`的创建. 调用`MediaCodec.createDecoderByType()`创建`MediaCodec`, 对`MediaCodec`进行`configure()`, 将上文通过`SurfaceTexture`创建的`Surface`配置给`MediaCodec`, 然后启动`MediaCodec`.
+
+## `doExtract()`
+`doExtract()`主要负责从`MediaExtractor`中获取数据, 并写入给`MediaCodec`:
+```
+// src/main/java/com/android/grafika/MoviePlayer.java
+    private void doExtract(MediaExtractor extractor, int trackIndex, MediaCodec decoder,
+            FrameCallback frameCallback) {
+        ... ...
+        ByteBuffer[] decoderInputBuffers = decoder.getInputBuffers();
+        ... ...
+        while (!outputDone) {
+            ... ...
+            if (!inputDone) {
 ```

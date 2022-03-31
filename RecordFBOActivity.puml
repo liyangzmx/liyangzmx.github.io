@@ -1,0 +1,264 @@
+@startuml RecordFBOActivity
+ 
+hide footbox
+skinparam {
+    ' defaultFontName Abyssinica SIL
+    Shadowing false  
+    backgroundColor white
+    NoteFontColor #Black
+    NoteFontSize 16
+    NoteTextAlignment left
+    NoteBackgroundColor WhiteSmoke
+    NoteColor transparent
+    NoteBorderThickness 0
+    NoteBorderColor transparent
+    NoteBorderThickness 0
+    NoteShadowing false
+    ParticipantPadding 0
+    BoxPadding 20
+    dpi 96
+    ClassBackgroundColor transparent
+    ClassHeaderBackgroundColor lightgreen
+    ClassStereotypeFontColor transparent
+    SequenceBoxBordercolor sienna
+    SequenceBoxFontSize 24
+    SequenceBoxFontColor Black
+    SequenceBoxBackgroundColor WhiteSmoke
+    SequenceLifeLineBackgroundColor WhiteSmoke
+    SequenceMessageAlignment center
+    SequenceGroupHeaderFontColor White
+    SequenceGroupHeaderFontSize 20
+    SequenceGroupBackgroundColor DarkOliveGreen
+    SequenceGroupBodyBackgroundColor transparent
+    SequenceGroupBorderThickness 4
+    SequenceGroupBorderColor DarkOliveGreen
+    ' transparent
+    sequence {
+        ParticipantBackgroundColor WhiteSmoke
+        ParticipantBorderColor Gray
+        ParticipantFontStyle Bold
+        ParticipantFontSize 12
+        ParticipantPadding 0
+
+        LifeLineBorderColor DimGray
+        ArrowColor Black
+        ArrowThickness 0.8
+        ColorArrowSeparationSpace 30
+    }
+}
+
+box RecordFBOActivity
+participant Choreographer
+participant RecordFBOActivity
+end box
+
+box SurfaceView
+participant SurfaceView
+participant Surface
+participant WindowSurface
+end box
+
+box Renderer
+participant RenderHandler
+participant RenderThread
+end box
+
+box Encoder
+participant InputWindowSurface
+participant TextureMovieEncoder2
+participant VideoEncoderCore
+end box
+
+box MediaCodec
+participant MediaCodec
+participant InputSurface
+participant MediaFormat
+end box
+
+->RecordFBOActivity:onCreate()
+activate RecordFBOActivity #orange
+create SurfaceView
+RecordFBOActivity->SurfaceView:.getHolder().addCallback()
+deactivate RecordFBOActivity
+activate SurfaceView #orange
+SurfaceView-->RecordFBOActivity:surfaceCreated()
+deactivate SurfaceView
+activate RecordFBOActivity #orange
+RecordFBOActivity-->SurfaceView:findViewById()
+RecordFBOActivity->SurfaceView:getHolder().getSurface()
+create Surface
+SurfaceView-->Surface:RET
+
+create RenderThread
+RecordFBOActivity-->RenderThread:NEW
+RecordFBOActivity->RenderThread:setName()
+RecordFBOActivity->RenderThread:start()
+activate RenderThread #yellow
+
+RecordFBOActivity->RecordFBOActivity:waitUntilReady()
+activate RecordFBOActivity #orange
+RenderThread-->RecordFBOActivity:READY
+deactivate RenderThread
+deactivate RecordFBOActivity
+RecordFBOActivity->RenderThread:setRecordMethod()
+
+create RenderHandler
+RecordFBOActivity->RenderHandler:sendSurfaceCreated()
+activate RenderHandler #orange
+RenderThread-->RenderHandler:**MSG_SURFACE_CREATED**
+activate RenderHandler #yellow
+RenderHandler->RenderThread:surfaceCreated()
+deactivate RenderHandler
+deactivate RenderHandler
+activate RenderThread #yellow
+RenderThread->RenderThread:prepareGl()
+activate RenderThread #yellow
+create WindowSurface
+RenderThread-->WindowSurface:new
+Surface-->o WindowSurface:mSurface
+RenderThread-->WindowSurface:makeCurrent()
+deactivate RenderThread
+deactivate RenderThread
+
+
+->RecordFBOActivity:surfaceChanged()
+RecordFBOActivity->RenderHandler:sendSurfaceChanged()
+activate RenderHandler #orange
+RenderHandler->RenderHandler:**MSG_SURFACE_CHANGED**
+activate RenderHandler #yellow
+RenderHandler->RenderThread:surfaceChanged()
+deactivate RenderHandler
+deactivate RenderHandler
+activate RenderThread #yellow
+RenderThread->RenderThread:prepareFramebuffer()
+activate RenderThread #yellow
+deactivate RenderThread
+deactivate RenderThread
+RecordFBOActivity->Choreographer:postFrameCallback()
+activate Choreographer #LightBlue
+note over Choreographer:**WAITING VSYNC**
+
+
+->RecordFBOActivity:clickToggleRecording()
+activate RecordFBOActivity #orange
+RecordFBOActivity->RecordFBOActivity:updateControls()
+activate RecordFBOActivity #orange
+deactivate RecordFBOActivity
+RecordFBOActivity->RenderHandler:setRecordingEnabled()
+deactivate RecordFBOActivity
+deactivate RecordFBOActivity
+activate RenderHandler #orange
+RenderHandler->RenderHandler:**MSG_RECORDING_ENABLED**
+activate RenderHandler #yellow
+RenderHandler->RenderThread:setRecordingEnabled()
+deactivate RenderHandler
+deactivate RenderHandler
+activate RenderThread #yellow
+RenderThread->RenderThread:startEncoder()
+activate RenderThread #yellow
+create VideoEncoderCore
+RenderThread-->VideoEncoderCore:NEW
+activate VideoEncoderCore #yellow
+create MediaFormat
+VideoEncoderCore-->MediaFormat:new
+VideoEncoderCore->MediaFormat:setInteger(**KEY_COLOR_FORMAT**)
+VideoEncoderCore->MediaFormat:setInteger(**KEY_BIT_RATE**)
+VideoEncoderCore->MediaFormat:setInteger(**KEY_FRAME_RATE**)
+VideoEncoderCore->MediaFormat:setInteger(**KEY_I_FRAME_INTERVAL**)
+create MediaCodec
+VideoEncoderCore-->MediaCodec:NEW
+note over MediaCodec:MediaCodec.createEncoderByType()
+VideoEncoderCore->MediaCodec:configure()
+VideoEncoderCore->MediaCodec:createInputSurface()
+activate MediaCodec
+create InputSurface
+MediaCodec-->InputSurface:new
+deactivate MediaCodec
+VideoEncoderCore->MediaCodec:start()
+deactivate VideoEncoderCore
+create InputWindowSurface
+RenderThread-->InputWindowSurface:NEW
+activate InputWindowSurface #yellow
+InputSurface-->o InputWindowSurface:mSurface
+InputWindowSurface->InputWindowSurface:createWindowSurface()
+activate InputWindowSurface #yellow
+deactivate InputWindowSurface
+deactivate InputWindowSurface
+create TextureMovieEncoder2
+RenderThread-->TextureMovieEncoder2:NEW
+
+RenderThread->RenderThread:**STARTTED**
+deactivate RenderThread
+deactivate RenderThread
+
+Choreographer-->RecordFBOActivity:doFrame()
+deactivate Choreographer
+activate RecordFBOActivity #LightBlue
+RecordFBOActivity->RenderHandler:sendDoFrame()
+deactivate RecordFBOActivity
+activate RenderHandler #lightBlue
+RenderHandler->RenderHandler:**MSG_DO_FRAME**
+activate RenderHandler #yellow
+RenderHandler->RenderThread:doFrame()
+deactivate RenderHandler
+deactivate RenderHandler
+activate RenderThread #yellow
+
+RenderThread->RenderThread:update()
+RenderThread->RenderThread:draw()
+activate RenderThread #yellow
+deactivate RenderThread
+
+RenderThread->WindowSurface:swapBuffers()
+
+RenderThread->TextureMovieEncoder2:frameAvailableSoon()
+activate TextureMovieEncoder2 #yellow
+TextureMovieEncoder2->TextureMovieEncoder2:**MSG_FRAME_AVAILABLE**
+activate TextureMovieEncoder2 #yellow
+TextureMovieEncoder2->VideoEncoderCore:handleFrameAvailable()
+deactivate TextureMovieEncoder2
+deactivate TextureMovieEncoder2
+activate VideoEncoderCore #yellow
+VideoEncoderCore->MediaCodec:getOutputBuffers()
+group while(true)
+VideoEncoderCore->MediaCodec:dequeueOutputBuffer()
+note over VideoEncoderCore:**mMuxer.writeSampleData()**
+VideoEncoderCore->MediaCodec:releaseOutputBuffer()
+deactivate VideoEncoderCore
+end group
+
+group mEglCore.getGlVersion() < 3
+RenderThread->InputWindowSurface:makeCurrent()
+RenderThread->RenderThread:draw()
+activate RenderThread #yellow
+deactivate RenderThread
+end group
+
+group mEglCore.getGlVersion() >=3 
+RenderThread->InputWindowSurface:makeCurrentReadFrom()
+end group
+
+RenderThread->InputWindowSurface:setPresentationTime()
+RenderThread->InputWindowSurface:swapBuffers
+
+' RenderThread->TextureMovieEncoder2:frameAvailableSoon()
+' activate TextureMovieEncoder2
+' TextureMovieEncoder2->TextureMovieEncoder2:**MSG_FRAME_AVAILABLE**
+' activate TextureMovieEncoder2
+' TextureMovieEncoder2->VideoEncoderCore:handleFrameAvailable()
+' deactivate TextureMovieEncoder2
+' deactivate TextureMovieEncoder2
+' activate VideoEncoderCore
+' VideoEncoderCore->MediaCodec:getOutputBuffers()
+' group while(true)
+' VideoEncoderCore->MediaCodec:dequeueOutputBuffer()
+' note over VideoEncoderCore:**mMuxer.writeSampleData()**
+' VideoEncoderCore->MediaCodec:releaseOutputBuffer()
+' deactivate VideoEncoderCore
+' end group
+
+RenderThread-->WindowSurface:makeCurrent()
+deactivate RenderThread
+deactivate RenderThread
+
+@enduml
