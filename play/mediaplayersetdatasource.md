@@ -429,7 +429,7 @@ void NuPlayer::setDataSourceAsync(int fd, int64_t offset, int64_t length) {
     ... ...
 }
 ```
-构造了`GenericSource`, 通过`setDataSource()`为其设置文件描述符:
+`onPrepareAsync()`构造了`GenericSource`, 通过`setDataSource()`为其设置文件描述符:
 ```
 // frameworks/av/media/libmediaplayerservice/nuplayer/GenericSource.cpp
 status_t NuPlayer::GenericSource::setDataSource(

@@ -11,12 +11,17 @@
     - [媒体文件元数据信息`MetaData`的获取](#媒体文件元数据信息metadata的获取)
     - [媒体文件中`MPEG4Extractor::Track`数量的获取](#媒体文件中mpeg4extractortrack数量的获取)
     - [`IMediaSource`的获取](#imediasource的获取)
-    - [媒体文件中`MPEG4Extractor::Track`元数据的获取](#媒体文件中mpeg4extractortrack元数据的获取)
+    - [媒体文件中`MPEG4Extractor::Track`元数据`MetaData`的获取](#媒体文件中mpeg4extractortrack元数据metadata的获取)
+    - [音频`GenericSource::Track`的创建](#音频genericsourcetrack的创建)
+    - [视频`GenericSource::Track`的创建](#视频genericsourcetrack的创建)
   - [`GenericSource::finishPrepareAsync()`](#genericsourcefinishprepareasync)
+    - [`NuPlayer::GenericSource::startSources()`创建`Extractor`的缓冲区](#nuplayergenericsourcestartsources创建extractor的缓冲区)
+    - [`NuPlayer::Source::notifyPrepared()`发出`kWhatPrepared`消息通知准备完成](#nuplayersourcenotifyprepared发出kwhatprepared消息通知准备完成)
+    - [`NuPlayer::GenericSource::postReadBuffer()`开始预读取解码数据](#nuplayergenericsourcepostreadbuffer开始预读取解码数据)
 
 
 # `MediaPlayer.prepareAsync()`
-回到`VidewView.openVideo()`中, `mMediaPlayer.prepareAsync()`即开始通知播放器做准备工作:
+回到`VidewView.openVideo()`中, `mMediaPlayer.prepareAsync()`即开始通知播放器做准备工作:  
 ```
 // frameworks/base/media/java/android/media/MediaPlayer.java
 public class MediaPlayer extends PlayerBase
@@ -27,7 +32,7 @@ public class MediaPlayer extends PlayerBase
     .. ...
     public native void prepareAsync() throws IllegalStateException;
 ```
-`prepareAsync()`是个本地方法:
+`prepareAsync()`是个本地方法:  
 ```
 // frameworks/base/media/jni/android_media_MediaPlayer.cpp
 static const JNINativeMethod gMethods[] = {
@@ -50,7 +55,7 @@ android_media_MediaPlayer_prepareAsync(JNIEnv *env, jobject thiz)
 ```
 
 ## `NuPlayerDriver::prepareAsync()`
-`NuPlayerDriver::setVideoSurfaceTexture()`的调用是多余的, 但并没什么坏处:
+`NuPlayerDriver::setVideoSurfaceTexture()`的调用是多余的, 但并没什么坏处:  
 ```
 // frameworks/av/media/libmediaplayerservice/nuplayer/NuPlayerDriver.cpp
 status_t NuPlayerDriver::prepareAsync() {
@@ -67,11 +72,10 @@ status_t NuPlayerDriver::prepareAsync() {
             return INVALID_OPERATION;
     };
 }
-
 ```
 
 ## `NuPlayer::prepareAsync()`
-播放器的状态如果是还未播放过, 那肯定是`STATE_UNPREPARED`, `STATE_STOPPED`的情景这里不讨论:
+播放器的状态如果是还未播放过, 那肯定是`STATE_UNPREPARED`, `STATE_STOPPED`的情景这里不讨论:  
 ```
 // frameworks/av/media/libmediaplayerservice/nuplayer/NuPlayer.cpp
 void NuPlayer::prepareAsync() {
@@ -94,7 +98,7 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
         ... ...
 ```
 ## 用于文件读取的`IDataSource`的创建
-如上文`mSource`的类型是`GenericSource`:
+如上文`mSource`的类型是`GenericSource`:  
 ```
 // frameworks/av/media/libmediaplayerservice/nuplayer/GenericSource.cpp
 void NuPlayer::GenericSource::prepareAsync() {
@@ -161,7 +165,7 @@ void NuPlayer::GenericSource::onPrepareAsync() {
     ... ...
 }
 ```
-`mediaExService->makeIDataSource()`将调用到`media.extractor`服务, 对应的函数是: `MediaExtractorService::makeIDataSource(`:
+`mediaExService->makeIDataSource()`将调用到`media.extractor`服务, 对应的函数是: `MediaExtractorService::makeIDataSource(`:  
 ```
 // frameworks/av/services/mediaextractor/MediaExtractorService.cpp
 ::android::binder::Status MediaExtractorService::makeIDataSource(
@@ -176,7 +180,9 @@ void NuPlayer::GenericSource::onPrepareAsync() {
 ```
 此处分两步:
 * `DataSource`的创建
-* `DataSource`需要通过一个`IDataSource`接口返回给`mediaserver`, 首先看创建:
+* `DataSource`需要通过一个`IDataSource`接口返回给`mediaserver`
+
+首先看创建:  
 ```
 // frameworks/av/media/libdatasource/DataSourceFactory.cpp
 sp<DataSource> DataSourceFactory::CreateFromFd(int fd, int64_t offset, int64_t length) {
@@ -184,7 +190,7 @@ sp<DataSource> DataSourceFactory::CreateFromFd(int fd, int64_t offset, int64_t l
     return source->initCheck() != OK ? nullptr : source;
 }
 ```
-`FileSource`是`DataSource`的子类, 该数据源主要针对文件类型. 继续看`IDataSource`的创建:
+`FileSource`是`DataSource`的子类, 该数据源主要针对文件类型. 继续看`IDataSource`的创建:  
 ```
 // frameworks/av/media/libstagefright/InterfaceUtils.cpp
 sp<IDataSource> CreateIDataSourceFromDataSource(const sp<DataSource> &source) {
@@ -213,13 +219,15 @@ private:
         mName = String8::format("RemoteDataSource(%s)", mSource->toString().string());
     }
     ...
+}
 ```
+
 以上过程几个重要环节:
 * 首先创建`RemoteDataSource`, 其实现了`IDataSource`接口, 用于响应客户端`mediaserver`的后续请求
 * 在`RemoteDataSource`中, 创建了`MemoryDealer`内存分配器
 * 然后分配了一定量的内存(64kB), 用户后续从DataSource中读取数据
 
-回到`GenericSource::onPrepareAsync()`中, 通过`CreateDataSourceFromIDataSource()`创建了`mediaserver`中本地的`DataSource`:
+回到`GenericSource::onPrepareAsync()`中, 通过`CreateDataSourceFromIDataSource()`创建了`mediaserver`中本地的`DataSource`:  
 ```
 // frameworks/av/media/libstagefright/InterfaceUtils.cpp
 sp<DataSource> CreateDataSourceFromIDataSource(const sp<IDataSource> &source) {
@@ -245,7 +253,7 @@ CallbackDataSource::CallbackDataSource(
 ```
 本地的`DataSource`类型为`TinyCacheSource`, 其`mSource`的成员为`CallbackDataSource`, 而`CallbackDataSource`的`mSource`为`media.extractor`返回的`IDataSource`.
 
-`CallbackDataSource`之所以是这个名字是因为其持有`IMemory`, 该接口是通过`mIDataSource->getIMemory()`获得的:
+`CallbackDataSource`之所以是这个名字是因为其持有`IMemory`, 该接口是通过`mIDataSource->getIMemory()`获得的:  
 ```
 // frameworks/av/media/libstagefright/include/media/stagefright/RemoteDataSource.h
 class RemoteDataSource : public BnDataSource {
@@ -266,7 +274,7 @@ class RemoteDataSource : public BnDataSource {
 ## `initFromDataSource()`对解封装器的创建
 
 ### 用于解封装的`MediaExtractor`的创建
-回到`GenericSource::onPrepareAsync()`中, 通过`initFromDataSource()`创建解封装:
+回到`GenericSource::onPrepareAsync()`中, 通过`initFromDataSource()`创建解封装:  
 ```
 // frameworks/av/media/libmediaplayerservice/nuplayer/GenericSource.cpp
 status_t NuPlayer::GenericSource::initFromDataSource() {
@@ -304,7 +312,7 @@ status_t NuPlayer::GenericSource::initFromDataSource() {
     return OK;
 }
 ```
-`MediaExtractorFactory::Create()`也是通过`IMediaExtractorService`服务创建`IMediaExtractor`的:
+`MediaExtractorFactory::Create()`也是通过`IMediaExtractorService`服务创建`IMediaExtractor`的:  
 ```
 // frameworks/av/media/libstagefright/MediaExtractorFactory.cpp
 // static
@@ -333,7 +341,7 @@ sp<IMediaExtractor> MediaExtractorFactory::Create(
     return NULL;
 }
 ```
-首先这里的`CreateIDataSourceFromDataSource()`的调用路径和上文有区别:
+首先这里的`CreateIDataSourceFromDataSource()`的调用路径和上文有区别:  
 ```
 // frameworks/av/media/libstagefright/InterfaceUtils.cpp
 sp<IDataSource> CreateIDataSourceFromDataSource(const sp<DataSource> &source) {
@@ -356,7 +364,7 @@ class RemoteDataSource : public BnDataSource {
         return new RemoteDataSource(source);
     }
 ```
-`source->getIDataSource().get()`是成立的, 此时`source`的类型是`TinyCacheSource`, 因此:
+`source->getIDataSource().get()`是成立的, 此时`source`的类型是`TinyCacheSource`, 因此:  
 ```
 // frameworks/av/media/libstagefright/CallbackDataSource.cpp
 sp<IDataSource> TinyCacheSource::getIDataSource() const {
@@ -369,7 +377,7 @@ sp<IDataSource> CallbackDataSource::getIDataSource() const {
 ```
 `source->getIDataSource().get()`返回的`IDataSource`这是此前`media.extractor`返回给`mediaserver`的, 因此传递给`mediaExService->makeExtractor()`的`IDataSource`对于`media.extractor`而言是本地的了.
 
-`mediaExService->makeExtractor()`就是`MediaExtractorService::makeExtractor()`, 再次回到`media.extractor`中:
+`mediaExService->makeExtractor()`就是`MediaExtractorService::makeExtractor()`, 再次回到`media.extractor`中:  
 ```
 // frameworks/av/services/mediaextractor/MediaExtractorService.cpp
 ::android::binder::Status MediaExtractorService::makeExtractor(
@@ -377,18 +385,14 @@ sp<IDataSource> CallbackDataSource::getIDataSource() const {
         const ::std::optional< ::std::string> &mime,
         ::android::sp<::android::IMediaExtractor>* _aidl_return) {
     ALOGV("@@@ MediaExtractorService::makeExtractor for %s", mime ? mime->c_str() : nullptr);
-
     sp<DataSource> localSource = CreateDataSourceFromIDataSource(remoteSource);
-
     MediaBuffer::useSharedMemory();
     sp<IMediaExtractor> extractor = MediaExtractorFactory::CreateFromService(
             localSource,
             mime ? mime->c_str() : nullptr);
-
     ALOGV("extractor service created %p (%s)",
             extractor.get(),
             extractor == nullptr ? "" : extractor->name());
-
     if (extractor != nullptr) {
         registerMediaExtractor(extractor, localSource, mime ? mime->c_str() : nullptr);
     }
@@ -396,7 +400,8 @@ sp<IDataSource> CallbackDataSource::getIDataSource() const {
     return binder::Status::ok();
 }
 ```
-`CreateDataSourceFromIDataSource()`在`media.extractor`中创建了和在`mediaserver`中一样的`TinyCacheSource`, 这里流程上没啥区别. 紧接着通过`TinyCacheSource`创建了`IMediaExtractor`:
+
+`CreateDataSourceFromIDataSource()`在`media.extractor`中创建了和在`mediaserver`中一样的`TinyCacheSource`, 这里流程上没啥区别. 紧接着通过`TinyCacheSource`创建了`IMediaExtractor`:  
 ```
 // frameworks/av/media/libstagefright/MediaExtractorFactory.cpp
 sp<IMediaExtractor> MediaExtractorFactory::CreateFromService(
@@ -408,7 +413,6 @@ sp<IMediaExtractor> MediaExtractorFactory::CreateFromService(
         ALOGV("FAILED to autodetect media content.");
         return NULL;
     }
-
     MediaExtractor *ex = nullptr;
     if (creatorVersion == EXTRACTORDEF_VERSION_NDK_V1 ||
             creatorVersion == EXTRACTORDEF_VERSION_NDK_V2) {
@@ -427,7 +431,7 @@ sp<IMediaExtractor> MediaExtractorFactory::CreateFromService(
 ```
 
 ### `media.extractor`对封装插件的加载
-在分析`sniff()`函数之前, 先分析下`media.extractor`对接封装插件的加载, 在`media.extractor`启动时:
+在分析`sniff()`函数之前, 先分析下`media.extractor`对接封装插件的加载, 在`media.extractor`启动时:  
 ```
 // frameworks/av/services/mediaextractor/main_extractorservice.cpp
 int main(int argc __unused, char** argv)
@@ -485,7 +489,7 @@ void MediaExtractorFactory::LoadExtractors() {
 }
 ```
 
-首先是`RegisterExtractors()`, 它完成单个路径下的所有插件的加载:
+首先是`RegisterExtractors()`, 它完成单个路径下的所有插件的加载:  
 ```
 //static
 void MediaExtractorFactory::RegisterExtractors(
@@ -512,7 +516,7 @@ void MediaExtractorFactory::RegisterExtractors(
                     new ExtractorPlugin(getDef(), libHandle, libPath), pluginList);
             ...
 ```
-在本文讨论的情况, `getDef`的类型有:
+在本文讨论的情况, `getDef`的类型有:  
 ```
 // frameworks/av/media/extractors/mp4/MPEG4Extractor.cpp
 extern "C" {
@@ -530,7 +534,7 @@ ExtractorDef GETEXTRACTORDEF() {
 
 } // extern "C"
 ```
-因此`getDef()`返回的就是`GETEXTRACTORDEF`函数, 函数被调用后, 返回一个`ExtractorDef`被用于构造`ExtractorPlugin`:
+因此`getDef()`返回的就是`GETEXTRACTORDEF`函数, 函数被调用后, 返回一个`ExtractorDef`被用于构造`ExtractorPlugin`:  
 ```
 // frameworks/av/media/libstagefright/MediaExtractorFactory.cpp
 struct ExtractorPlugin : public RefBase {
@@ -548,7 +552,7 @@ struct ExtractorPlugin : public RefBase {
     ...
 };
 ```
-`ExtractorPlugin::def`将在上文提到的`sniff()`函数中被获取到. `RegisterExtractor()`为插件的注册:
+`ExtractorPlugin::def`将在上文提到的`sniff()`函数中被获取到. `RegisterExtractor()`为插件的注册:  
 ```
 // frameworks/av/media/libstagefright/MediaExtractorFactory.cpp
 // static
@@ -568,7 +572,7 @@ void MediaExtractorFactory::RegisterExtractor(const sp<ExtractorPlugin> &plugin,
 至此插件的`MPEG4Extractor.cpp:Sniff()`函数将最终保存在:`MediaService::gPlugins[...].m_ptr.def.u.v3.sniff`中.
 
 ### `MPEG4Extractor.cpp:Sniff()`的调用 
-回到`MediaExtractorFactory::CreateFromService()`通过`sniff()`函数主要完成`DataSource`中流媒体文件格式的探测工作:
+回到`MediaExtractorFactory::CreateFromService()`通过`sniff()`函数主要完成`DataSource`中流媒体文件格式的探测工作:  
 ```
 // frameworks/av/media/libstagefright/MediaExtractorFactory.cpp
 void *MediaExtractorFactory::sniff(
@@ -602,7 +606,7 @@ void *MediaExtractorFactory::sniff(
     return bestCreator;
 }
 ```
-此处`(void*) (*it)->def.u.v3.sniff()`调用的就是上文的`MPEG4Extractor.cpp:Sniff()`:
+此处`(void*) (*it)->def.u.v3.sniff()`调用的就是上文的`MPEG4Extractor.cpp:Sniff()`:  
 ```
 // frameworks/av/media/extractors/mp4/MPEG4Extractor.cpp
 static CreatorFunc Sniff(
@@ -625,7 +629,7 @@ static CreatorFunc Sniff(
 如果`MPEG4Extractor.cpp:Sniff()`判定为是自己能解析的格式, 则返回`MPEG4Extractor.cpp:CreateExtractor()`
 
 ### `MPEG4Extractor.cpp:CreateExtractor()`创建`CMediaExtractor`
-回到`MediaExtractorFactory::CreateFromService()`中, `((CreatorFunc)creator)(source->wrap(), meta)`将调用`MPEG4Extractor.cpp:CreateExtractor()`, 在调用该方法之前`TinyCacheSource`的父类`DataSource`的wrap()方法被调用, 生成`CDataSource`:
+回到`MediaExtractorFactory::CreateFromService()`中, `((CreatorFunc)creator)(source->wrap(), meta)`将调用`MPEG4Extractor.cpp:CreateExtractor()`, 在调用该方法之前`TinyCacheSource`的父类`DataSource`的wrap()方法被调用, 生成`CDataSource`:  
 ```
 // frameworks/av/include/media/DataSource.h
 class DataSource : public DataSourceBase, public virtual RefBase {
@@ -657,7 +661,7 @@ public:
 ```
 此时`TinyCachedSource`的父类`DataSource`被设置到了其`mWrapper.handle`中
 
-再看`MPEG4Extractor.cpp:CreateExtractor()`的调用(注意此处传递的已经是`CDataSource`了):
+再看`MPEG4Extractor.cpp:CreateExtractor()`的调用(注意此处传递的已经是`CDataSource`了):  
 ```
 // frameworks/av/media/extractors/mp4/MPEG4Extractor.cpp
 static CMediaExtractor* CreateExtractor(CDataSource *source, void *) {
@@ -665,7 +669,7 @@ static CMediaExtractor* CreateExtractor(CDataSource *source, void *) {
 }
 ```
 
-`DataSourceHelper`的创建:
+`DataSourceHelper`的创建:  
 ```
 // frameworks/av/include/media/MediaExtractorPluginHelper.h
 /* adds some convience methods */
@@ -677,7 +681,7 @@ public:
     ...
 ```
 
-`MPEG4Extractor`的创建:
+`MPEG4Extractor`的创建:  
 ```
 // frameworks/av/media/extractors/mp4/MPEG4Extractor.cpp
 MPEG4Extractor::MPEG4Extractor(DataSourceHelper *source, const char *mime)
@@ -700,7 +704,7 @@ MPEG4Extractor::MPEG4Extractor(DataSourceHelper *source, const char *mime)
 ```
 至此, `TinyCachedSource`的父类`DataSource`被设置到了`MPEG4Extractor.mDataSource->mSource->handle`
 
-`wrap()`函数创建`CMediaExtractor`并对其进行设置:
+`wrap()`函数创建`CMediaExtractor`并对其进行设置:  
 ```
 inline CMediaExtractor *wrap(MediaExtractorPluginHelper *extractor) {
     CMediaExtractor *wrapper = (CMediaExtractor*) malloc(sizeof(CMediaExtractor));
@@ -751,7 +755,7 @@ MediaExtractorCUnwrapper::MediaExtractorCUnwrapper(CMediaExtractor *plugin) {
 ```
 至此, `TinyDataSource`被设置到了:`MediaExtractorFactory::CreateFromService()`中的`ret->plugin->data->mDataSource->mSource->handle`
 
-最后为了返回`IMediaExtractor`, `MediaExtractorFactory::CreateFromService()`调用了`CreateIMediaExtractorFromMediaExtractor()`:
+最后为了返回`IMediaExtractor`, `MediaExtractorFactory::CreateFromService()`调用了`CreateIMediaExtractorFromMediaExtractor()`:  
 ```
 // frameworks/av/media/libstagefright/InterfaceUtils.cpp
 sp<IMediaExtractor> CreateIMediaExtractorFromMediaExtractor(
@@ -798,7 +802,7 @@ RemoteMediaExtractor::RemoteMediaExtractor(
 * `extractor->mExtractor->plugin->data->mDataSource->mSource`: `CDataSource`
 * `extractor->mExtractor->plugin->data->mDataSource->mSource->handle`: `DataSource` -> `TinyDataSource`
 
-最后回到`MediaExtractorService::makeExtractor()`中, 通过调试验证上述言论:
+最后回到`MediaExtractorService::makeExtractor()`中, 通过调试验证上述言论:  
 ```
 p *((TinyCacheSource *)((RemoteMediaExtractor *)0x0000007d68639df0)->mSource.m_ptr->mWrapper->handle)
 warning: `this' is not accessible (substituting 0). Couldn't load 'this' because its value couldn't be evaluated
@@ -816,7 +820,7 @@ warning: `this' is not accessible (substituting 0). Couldn't load 'this' because
 }
 ```
 
-对于地址`0x0000007d58647640`, 已经知道其类型为`CallbackDataSource`, 因此:
+对于地址`0x0000007d58647640`, 已经知道其类型为`CallbackDataSource`, 因此:  
 ```
 p *(CallbackDataSource *)0x0000007d58647640
 warning: `this' is not accessible (substituting 0). Couldn't load 'this' because its value couldn't be evaluated
@@ -833,9 +837,9 @@ warning: `this' is not accessible (substituting 0). Couldn't load 'this' because
 通过`mName`确认到以上所有类型行的总结都是正确的, 至此到`media.extractor`的 IPC 过程结束.
 
 ### 媒体文件元数据信息`MetaData`的获取
-回到`NuPlayer::GenericSource::initFromDataSource()`中, 继续查看`extractor->getMetaData()`, 该调用将再次通过 `binder` 调用到 `meida.extracotr`中的`RemoteMediaExtractor::getMedtaData()`:
+回到`NuPlayer::GenericSource::initFromDataSource()`中, 继续查看`extractor->getMetaData()`, 该调用将再次通过 `binder` 调用到 `meida.extracotr`中的`RemoteMediaExtractor::getMedtaData()`:  
 ```
-// /home/nickli/work/aosp/frameworks/av/media/libstagefright/RemoteMediaExtractor.cpp
+// frameworks/av/media/libstagefright/RemoteMediaExtractor.cpp
 sp<MetaData> RemoteMediaExtractor::getMetaData() {
     sp<MetaData> meta = new MetaData();
     if (mExtractor->getMetaData(*meta.get()) == OK) {
@@ -844,7 +848,7 @@ sp<MetaData> RemoteMediaExtractor::getMetaData() {
     return nullptr;
 }
 
-// /home/nickli/work/aosp/frameworks/av/media/libstagefright/MediaExtractor.cpp
+// frameworks/av/media/libstagefright/MediaExtractor.cpp
 status_t MediaExtractorCUnwrapper::getMetaData(MetaDataBase& meta) {
     sp<AMessage> msg = new AMessage();
     AMediaFormat *format =  AMediaFormat_fromMsg(&msg);
@@ -856,7 +860,7 @@ status_t MediaExtractorCUnwrapper::getMetaData(MetaDataBase& meta) {
     return reverse_translate_error(ret);
 }
 
-// /home/nickli/work/aosp/frameworks/av/include/media/MediaExtractorPluginHelper.h
+// frameworks/av/include/media/MediaExtractorPluginHelper.h
 inline CMediaExtractor *wrap(MediaExtractorPluginHelper *extractor) {
     ...
     wrapper->getMetaData = [](
@@ -867,7 +871,7 @@ inline CMediaExtractor *wrap(MediaExtractorPluginHelper *extractor) {
     ...
 }
 
-// /home/nickli/work/aosp/frameworks/av/media/extractors/mp4/MPEG4Extractor.cpp
+// frameworks/av/media/extractors/mp4/MPEG4Extractor.cpp
 media_status_t MPEG4Extractor::getMetaData(AMediaFormat *meta) {
     status_t err;
     if ((err = readMetaData()) != OK) {
@@ -888,19 +892,19 @@ status_t MPEG4Extractor::readMetaData() {
 `MetaData`通过`binder`返回给`mediaserver`时是通过``MetaDataBase::writeToParcel()完成序列化的, 不文也不分析该过程.
 
 ### 媒体文件中`MPEG4Extractor::Track`数量的获取
-回到`NuPlayer::GenericSource::initFromDataSource()`中, 继续查看`extractor->countTracks()`, 该调用将再次通过 `binder` 调用到 `meida.extracotr`中的`RemoteMediaExtractor::countTracks()`:
+回到`NuPlayer::GenericSource::initFromDataSource()`中, 继续查看`extractor->countTracks()`, 该调用将再次通过 `binder` 调用到 `meida.extracotr`中的`RemoteMediaExtractor::countTracks()`:  
 ```
-// /home/nickli/work/aosp/frameworks/av/media/libstagefright/RemoteMediaExtractor.cpp
+// frameworks/av/media/libstagefright/RemoteMediaExtractor.cpp
 size_t RemoteMediaExtractor::countTracks() {
     return mExtractor->countTracks();
 }
 
-// /home/nickli/work/aosp/frameworks/av/media/libstagefright/MediaExtractor.cpp
+// frameworks/av/media/libstagefright/MediaExtractor.cpp
 size_t MediaExtractorCUnwrapper::countTracks() {
     return plugin->countTracks(plugin->data);
 }
 
-// /home/nickli/work/aosp/frameworks/av/include/media/MediaExtractorPluginHelper.h
+// frameworks/av/include/media/MediaExtractorPluginHelper.h
 inline CMediaExtractor *wrap(MediaExtractorPluginHelper *extractor) {
     ...
     wrapper->countTracks = [](void *data) -> size_t {
@@ -909,7 +913,7 @@ inline CMediaExtractor *wrap(MediaExtractorPluginHelper *extractor) {
     ...
 }
 
-// /home/nickli/work/aosp/frameworks/av/media/extractors/mp4/MPEG4Extractor.cpp
+// frameworks/av/media/extractors/mp4/MPEG4Extractor.cpp
 size_t MPEG4Extractor::countTracks() {
     status_t err;
     if ((err = readMetaData()) != OK) {
@@ -931,34 +935,34 @@ size_t MPEG4Extractor::countTracks() {
 `MPEG4Extractor::readMetaData()`在上文提到的`MPEG4Extractor::getMetaData()`已经调用过了, 这里跳过, 函数主体主要统计`MPEG4Extractor`中 `MPEG4Extractor::Track`的数量.
 
 ### `IMediaSource`的获取
-回到`NuPlayer::GenericSource::initFromDataSource()`中, 继续查看`extractor->getTrack(i)`, 该调用将再次通过 `binder` 调用到 `meida.extracotr`中的`RemoteMediaExtractor::getTrack()`:
+回到`NuPlayer::GenericSource::initFromDataSource()`中, 继续查看`extractor->getTrack(i)`, 该调用将再次通过 `binder` 调用到 `meida.extracotr`中的`RemoteMediaExtractor::getTrack()`:  
 ```
-// /home/nickli/work/aosp/frameworks/av/media/libstagefright/RemoteMediaExtractor.cpp
+// frameworks/av/media/libstagefright/RemoteMediaExtractor.cpp
 sp<IMediaSource> RemoteMediaExtractor::getTrack(size_t index) {
     MediaTrack *source = mExtractor->getTrack(index);
     return (source == nullptr)
             ? nullptr : CreateIMediaSourceFromMediaSourceBase(this, source, mExtractorPlugin);
 }
 ```
-分两部分, 首先看`mExtractor->getTrack()`:
+分两部分, 首先看`mExtractor->getTrack()`:  
 ```
-// /home/nickli/work/aosp/frameworks/av/media/libstagefright/MediaExtractor.cpp
+// frameworks/av/media/libstagefright/MediaExtractor.cpp
 MediaTrack *MediaExtractorCUnwrapper::getTrack(size_t index) {
     return MediaTrackCUnwrapper::create(plugin->getTrack(plugin->data, index));
 }
 ```
-首先`plugin->getTrack()`负责创建`CMediaTrack`:
+首先`plugin->getTrack()`负责创建`CMediaTrack`:  
 ```
-// /home/nickli/work/aosp/frameworks/av/include/media/MediaExtractorPluginHelper.h
+// frameworks/av/include/media/MediaExtractorPluginHelper.h
 inline CMediaExtractor *wrap(MediaExtractorPluginHelper *extractor) {
     ...
     wrapper->getTrack = [](void *data, size_t index) -> CMediaTrack* {
         return wrap(((MediaExtractorPluginHelper*)data)->getTrack(index));
     };
 ```
-首先`MediaExtractorPluginHelper*)data)->getTrack()`负责获取`MediaTrackHelper`:
+首先`MediaExtractorPluginHelper*)data)->getTrack()`负责获取`MediaTrackHelper`:  
 ```
-// /home/nickli/work/aosp/frameworks/av/media/extractors/mp4/MPEG4Extractor.cpp
+// frameworks/av/media/extractors/mp4/MPEG4Extractor.cpp
 MediaTrackHelper *MPEG4Extractor::getTrack(size_t index) {
     status_t err;
     if ((err = readMetaData()) != OK) {
@@ -977,9 +981,9 @@ MediaTrackHelper *MPEG4Extractor::getTrack(size_t index) {
     return source;
 }
 ```
-`MPEG4Source`正是`MediaTrackHelper`的子类. 回到`MPEG4Extractor::MediaExtractorPluginHelper::wrap()`中, `wrap()`函数:
+`MPEG4Source`正是`MediaTrackHelper`的子类. 回到`MPEG4Extractor::MediaExtractorPluginHelper::wrap()`中, `wrap()`函数:  
 ```
-// /home/nickli/work/aosp/frameworks/av/include/media/MediaExtractorPluginHelper.h
+// frameworks/av/include/media/MediaExtractorPluginHelper.h
 inline CMediaTrack *wrap(MediaTrackHelper *track) {
     if (track == nullptr) {
         return nullptr;
@@ -989,9 +993,9 @@ inline CMediaTrack *wrap(MediaTrackHelper *track) {
     ...
 }
 ```
-至此`CMediaTrack`被创建, 且`MPEG4Source`作为`MediaTrackHelper`被传递给`MediaExtractorCUnwrapper::getTrack()`的`MediaTrackCUnwrapper::create()`函数:
+至此`CMediaTrack`被创建, 且`MPEG4Source`作为`MediaTrackHelper`被传递给`MediaExtractorCUnwrapper::getTrack()`的`MediaTrackCUnwrapper::create()`函数:  
 ```
-// /home/nickli/work/aosp/frameworks/av/media/libstagefright/MediaTrack.cpp
+// frameworks/av/media/libstagefright/MediaTrack.cpp
 MediaTrackCUnwrapper *MediaTrackCUnwrapper::create(CMediaTrack *cmediatrack) {
     if (cmediatrack == nullptr) {
         return nullptr;
@@ -1006,9 +1010,9 @@ MediaTrackCUnwrapper::MediaTrackCUnwrapper(CMediaTrack *cmediatrack) {
 ```
 至此`MPEG4Source`作为`MediaTrackHelper`被设置在`RemoteMediaExtractor::getTrack()`的变量`source->wrapper->data`, 并且`MediaTrackCUnwrapper`的父类是`MediaTrack`.
 
-回到`RemoteMediaExtractor::getTrack()`中, 从`CreateIMediaSourceFromMediaSourceBase()`继续分析:
+回到`RemoteMediaExtractor::getTrack()`中, 从`CreateIMediaSourceFromMediaSourceBase()`继续分析:  
 ```
-// /home/nickli/work/aosp/frameworks/av/media/libstagefright/InterfaceUtils.cpp
+// frameworks/av/media/libstagefright/InterfaceUtils.cpp
 sp<IMediaSource> CreateIMediaSourceFromMediaSourceBase(
         const sp<RemoteMediaExtractor> &extractor,
         MediaTrack *source, const sp<RefBase> &plugin) {
@@ -1018,7 +1022,7 @@ sp<IMediaSource> CreateIMediaSourceFromMediaSourceBase(
     return RemoteMediaSource::wrap(extractor, source, plugin);
 }
 
-// /home/nickli/work/aosp/frameworks/av/media/libstagefright/RemoteMediaSource.cpp
+// frameworks/av/media/libstagefright/RemoteMediaSource.cpp
 // static
 sp<IMediaSource> RemoteMediaSource::wrap(
         const sp<RemoteMediaExtractor> &extractor,
@@ -1042,7 +1046,7 @@ RemoteMediaSource::RemoteMediaSource(
 * `RemoteMediaSource.mTrack->wrapper`: `CMediaTrack`
 * `RemoteMediaSource.mTrack->wrapper->data`: `MediaTrackHelper` -> `MPEG4Source`
 
-为了验证该总结的正确性, 通过调试器:
+为了验证该总结的正确性, 通过调试器:  
 ```
 p track
 (const android::sp<android::IMediaSource>) $79 = (m_ptr = 0x0000007d98639b10)
@@ -1143,11 +1147,66 @@ p *(android::AString *)0x0000007d3863c110
 ```
 可以清晰的看到, 有一个`Track`的`mime`类型为`"video/avc"`, 而另一个通过同样的方法可得知为: `"audio/mp4a-latm"`.
 
-### 媒体文件中`MPEG4Extractor::Track`元数据的获取
+### 媒体文件中`MPEG4Extractor::Track`元数据`MetaData`的获取
+回到`NuPlayer::GenericSource::initFromDataSource()`中, 继续查看`extractor->getTrackMetaData(i)`, 该调用将再次通过 `binder` 调用到 `meida.extracotr`中的`RemoteMediaExtractor::getTrackMetaData()`:  
+```
+// frameworks/av/media/libstagefright/RemoteMediaExtractor.cpp
+sp<MetaData> RemoteMediaExtractor::getTrackMetaData(size_t index, uint32_t flags) {
+    sp<MetaData> meta = new MetaData();
+    if (mExtractor->getTrackMetaData(*meta.get(), index, flags) == OK) {
+        return meta;
+    }
+    return nullptr;
+}
+
+// frameworks/av/media/libstagefright/MediaExtractor.cpp
+status_t MediaExtractorCUnwrapper::getTrackMetaData(
+        MetaDataBase& meta, size_t index, uint32_t flags) {
+    sp<AMessage> msg = new AMessage();
+    AMediaFormat *format =  AMediaFormat_fromMsg(&msg);
+    media_status_t ret = plugin->getTrackMetaData(plugin->data, format, index, flags);
+    sp<MetaData> newMeta = new MetaData();
+    convertMessageToMetaData(msg, newMeta);
+    delete format;
+    meta = *newMeta;
+    return reverse_translate_error(ret);
+}
+
+// frameworks/av/include/media/MediaExtractorPluginHelper.h
+inline CMediaExtractor *wrap(MediaExtractorPluginHelper *extractor) {
+    ...
+    wrapper->getTrackMetaData = [](
+            void *data,
+            AMediaFormat *meta,
+            size_t index, uint32_t flags) -> media_status_t {
+        return ((MediaExtractorPluginHelper*)data)->getTrackMetaData(meta, index, flags);
+    };
+    ...
+}
+
+// frameworks/av/media/extractors/mp4/MPEG4Extractor.cpp
+media_status_t MPEG4Extractor::getTrackMetaData(
+        AMediaFormat *meta,
+        size_t index, uint32_t flags) {
+    status_t err;
+    if ((err = readMetaData()) != OK) {
+        return AMEDIA_ERROR_UNKNOWN;
+    }
+    ...
+    return AMediaFormat_copy(meta, track->meta);
+}
+```
+上文已经调试过, `track->meta`的数据结构就是`AMediaFormat`, 它其实也是`MPEG4Extractor::Track`的`mFormat`. 回到`MediaExtractorCUnwrapper::getTrackMetaData()`中, `convertMessageToMetaData()`将
+
+### 音频`GenericSource::Track`的创建
+回到`NuPlayer::GenericSource::initFromDataSource()`中, 如果`mime`类型是`"audio/"`开头, 则当前`Track`为音频, 则配置`mAudioTrack`, 分别配置其`mIndex`, `mSource`(类型为`IMediaSource`), `mPackets`(类型为`AnotherPacketSource`). 
+
+### 视频`GenericSource::Track`的创建
+与音频的情况类似
 
 
 ## `GenericSource::finishPrepareAsync()`
-回到`NuPlayer::GenericSource::onPrepareAsync()`中, `NuPlayer`结束`GenericSource`的配置:
+回到`NuPlayer::GenericSource::onPrepareAsync()`中, `NuPlayer`结束`GenericSource`的配置:  
 ```
 void NuPlayer::GenericSource::finishPrepareAsync() {
     ... ...
@@ -1159,9 +1218,208 @@ void NuPlayer::GenericSource::finishPrepareAsync() {
         notifyPrepared();
     }
     ... ...
+    if (mAudioTrack.mSource != NULL) {
+        postReadBuffer(MEDIA_TRACK_TYPE_AUDIO);
+    }
+
+    if (mVideoTrack.mSource != NULL) {
+        postReadBuffer(MEDIA_TRACK_TYPE_VIDEO);
+    }
 }
 ```
-大体说下这里, 主要是准备`DataSource`并设置给`mDataSource`, 该步骤不能失败, 如果成功, 且初始化没有问题, 则最终通过父类`NuPlayer::Source`的`notifyPrepared()`方法通知`NuPlayerDriver`:
+
+### `NuPlayer::GenericSource::startSources()`创建`Extractor`的缓冲区
+先看`startSources()`:  
+```
+// frameworks/av/media/libmediaplayerservice/nuplayer/GenericSource.cpp
+status_t NuPlayer::GenericSource::startSources() {
+    if (mAudioTrack.mSource != NULL && mAudioTrack.mSource->start() != OK) {
+        ALOGE("failed to start audio track!");
+        return UNKNOWN_ERROR;
+    }
+
+    if (mVideoTrack.mSource != NULL && mVideoTrack.mSource->start() != OK) {
+        ALOGE("failed to start video track!");
+        return UNKNOWN_ERROR;
+    }
+
+    return OK;
+}
+```
+由于`mSource`的类型为`IMediaSource`, 因此会通过`binder`调用到`media.extractor`一侧:  
+```
+// frameworks/av/media/libstagefright/RemoteMediaSource.cpp
+status_t RemoteMediaSource::start(MetaData *params) {
+    if (params) {
+        ALOGW("dropping start parameters:");
+        params->dumpToLog();
+    }
+    return mTrack->start();
+}
+
+// frameworks/av/media/libstagefright/MediaTrack.cpp
+status_t MediaTrackCUnwrapper::start() {
+    if (bufferGroup == nullptr) {
+        bufferGroup = new MediaBufferGroup();
+    }
+    return reverse_translate_error(wrapper->start(wrapper->data, bufferGroup->wrap()));
+}
+```
+这里操作比较多, 拆开看, 先看`MediaBufferGroup`创建后, `MediaBufferGroup::wrap()`的执行:  
+```
+// frameworks/av/media/libstagefright/include/media/stagefright/MediaBufferGroup.h
+class MediaBufferGroup : public MediaBufferObserver {
+public:
+    CMediaBufferGroup *wrap() {
+        if (mWrapper) {
+            return mWrapper;
+        }
+
+        mWrapper = new CMediaBufferGroup;
+        mWrapper->handle = this;
+        ...
+    }
+    ...
+```
+可以看到创建了`CMediaBufferGroup`, 并将上面创建的`MediaBufferGroup`设置给该对象的`handle`.
+
+再看`wrapper->start`方法:  
+```
+// frameworks/av/include/media/MediaExtractorPluginHelper.h
+inline CMediaTrack *wrap(MediaTrackHelper *track) {
+    ...
+    wrapper->start = [](void *data, CMediaBufferGroup *bufferGroup) -> media_status_t {
+        if (((MediaTrackHelper*)data)->mBufferGroup) {
+            // this shouldn't happen, but handle it anyway
+            delete ((MediaTrackHelper*)data)->mBufferGroup;
+        }
+        ((MediaTrackHelper*)data)->mBufferGroup = new MediaBufferGroupHelper(bufferGroup);
+        return ((MediaTrackHelper*)data)->start();
+    };
+    ...
+}
+```
+可以看到该`lambda`创建了`MediaBufferGroupHelper`, 并设置给了`wrapper->data`(类型为`MPEG4Source`)的`mBufferGroup`成员, 至此:
+* `MPEG4Source.mBufferGroup`: `MediaBufferGroupHelper`
+* `MPEG4Source.mBufferGroup->mGroup`: `CMediaBufferGroup`
+* `MPEG4Source.mBufferGroup->mGroup->handle` : `MediaBufferGroup`
+
+然后`wrapper->start`通过`((MediaTrackHelper*)data)->start()`调用到`MPEG4Source::start()`:  
+```
+// frameworks/av/media/extractors/mp4/MPEG4Extractor.cpp
+media_status_t MPEG4Source::start() {
+    Mutex::Autolock autoLock(mLock);
+    ...
+    // Allow up to kMaxBuffers, but not if the total exceeds kMaxBufferSize.
+    const size_t kInitialBuffers = 2;
+    const size_t kMaxBuffers = 8;
+    const size_t realMaxBuffers = min(kMaxBufferSize / max_size, kMaxBuffers);
+    `mBufferGroup`->init(kInitialBuffers, max_size, realMaxBuffers);
+    mSrcBuffer = new (std::nothrow) uint8_t[max_size];
+    if (mSrcBuffer == NULL) {
+        // file probably specified a bad max size
+        return AMEDIA_ERROR_MALFORMED;
+    }
+
+    mStarted = true;
+
+    return AMEDIA_OK;
+}
+```
+如上文`mBufferGroup`的类型为`MediaBufferGroupHelper`, 因此:  
+```
+// frameworks/av/include/media/MediaExtractorPluginHelper.h
+class MediaBufferGroupHelper {
+public:
+    bool init(size_t buffers, size_t buffer_size, size_t growthLimit = 0) {
+        return mGroup->init(mGroup->handle, buffers, buffer_size, growthLimit);
+    }
+
+// frameworks/av/media/libstagefright/include/media/stagefright/MediaBufferGroup.h
+class MediaBufferGroup : public MediaBufferObserver {
+public:
+    CMediaBufferGroup *wrap() {
+        ...
+        mWrapper->init = [](void *handle,
+                size_t buffers, size_t buffer_size, size_t growthLimit) -> bool {
+            ((MediaBufferGroup*)handle)->init(buffers, buffer_size, growthLimit);
+          //  ((MediaBufferGroup*)handle)->mWrapper->init = nullptr; // enforce call-once
+            return true;
+        };
+        ...
+    }
+    ...
+}
+
+// frameworks/av/media/libstagefright/foundation/MediaBufferGroup.cpp
+void MediaBufferGroup::init(size_t buffers, size_t buffer_size, size_t growthLimit) {
+    mInternal->mGrowthLimit = growthLimit;
+
+    if (mInternal->mGrowthLimit > 0 && buffers > mInternal->mGrowthLimit) {
+        ALOGW("Preallocated buffers %zu > growthLimit %zu, increasing growthLimit",
+                buffers, mInternal->mGrowthLimit);
+        mInternal->mGrowthLimit = buffers;
+    }
+    ...
+    if (buffer_size >= kSharedMemoryThreshold) {
+        // Using a single MemoryDealer is efficient for a group of shared memory objects.
+        // This loop guarantees that we use shared memory (no fallback to malloc).
+
+        size_t alignment = MemoryDealer::getAllocationAlignment();
+        size_t augmented_size = buffer_size + sizeof(MediaBuffer::SharedControl);
+        size_t total = (augmented_size + alignment - 1) / alignment * alignment * buffers;
+        sp<MemoryDealer> memoryDealer = new MemoryDealer(total, "MediaBufferGroup");
+
+        for (size_t i = 0; i < buffers; ++i) {
+            sp<IMemory> mem = memoryDealer->allocate(augmented_size);
+            if (mem.get() == nullptr || mem->unsecurePointer() == nullptr) {
+                ALOGW("Only allocated %zu shared buffers of size %zu", i, buffer_size);
+                break;
+            }
+            MediaBuffer *buffer = new MediaBuffer(mem);
+            buffer->getSharedControl()->clear();
+            add_buffer(buffer);
+        }
+        return;
+    }
+    ...
+    // Non-shared memory allocation.
+    for (size_t i = 0; i < buffers; ++i) {
+        MediaBuffer *buffer = new MediaBuffer(buffer_size);
+        if (buffer->data() == nullptr) {
+            delete buffer; // don't call release, it's not properly formed
+            ALOGW("Only allocated %zu malloc buffers of size %zu", i, buffer_size);
+            break;
+        }
+        add_buffer(buffer);
+    }
+}
+
+void MediaBufferGroup::add_buffer(MediaBufferBase *buffer) {
+    Mutex::Autolock autoLock(mInternal->mLock);
+
+    // if we're above our growth limit, release buffers if we can
+    for (auto it = mInternal->mBuffers.begin();
+            mInternal->mGrowthLimit > 0
+            && mInternal->mBuffers.size() >= mInternal->mGrowthLimit
+            && it != mInternal->mBuffers.end();) {
+        if ((*it)->refcount() == 0) {
+            (*it)->setObserver(nullptr);
+            (*it)->release();
+            it = mInternal->mBuffers.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    buffer->setObserver(this);
+    mInternal->mBuffers.emplace_back(buffer);
+}
+```
+这里其实比较直接, 创建`MemoryDealer`, 然后创建一串`MediaBuffer`并通过`add_buffer()`添加到本地
+
+### `NuPlayer::Source::notifyPrepared()`发出`kWhatPrepared`消息通知准备完成
+然后再看`notifyPrepared()`, 准备`DataSource`并设置给`mDataSource`, 该步骤不能失败, 如果成功, 且初始化没有问题, 则最终通过父类`NuPlayer::Source`的`notifyPrepared()`方法通知`NuPlayerDriver`:  
 ```
 // frameworks/av/media/libmediaplayerservice/nuplayer/NuPlayer.cpp
 void NuPlayer::Source::notifyPrepared(status_t err) {
@@ -1173,7 +1431,7 @@ void NuPlayer::Source::notifyPrepared(status_t err) {
 }
 ```
 
-`NuPlayerDriver`处理`NuPlayer::Source::kWhatPrepared`消息:
+`NuPlayerDriver`处理`NuPlayer::Source::kWhatPrepared`消息:  
 ```
 // frameworks/av/media/libmediaplayerservice/nuplayer/NuPlayer.cpp
 void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
@@ -1203,7 +1461,7 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
     }
 }
 ```
-`NuPlayer`通过`NuPlayerDriver::notifyPrepareCompleted()`通知完成操作:
+`NuPlayer`通过`NuPlayerDriver::notifyPrepareCompleted()`通知完成操作:  
 ```
 // frameworks/av/media/libmediaplayerservice/nuplayer/NuPlayerDriver.cpp
 
@@ -1227,7 +1485,7 @@ void NuPlayerDriver::notifyPrepareCompleted(status_t err) {
     mCondition.broadcast();
 }
 ```
-然而, `mCondition.broadcast()`的消息并没有对应的`mCondition.wait()`, 这是因为`NuPlayerDriver`实际上是通过`notifyListener_l()`同时上层的, 消息是`MEDIA_PREPARED`:
+然而, `mCondition.broadcast()`的消息并没有对应的`mCondition.wait()`, 这是因为`NuPlayerDriver`实际上是通过`notifyListener_l()`同时上层的, 消息是`MEDIA_PREPARED`:  
 ```
 // frameworks/av/media/libmediaplayerservice/nuplayer/NuPlayerDriver.cpp
 void NuPlayerDriver::notifyListener_l(
@@ -1243,7 +1501,7 @@ void NuPlayerDriver::notifyListener_l(
     mLock.lock();
 }
 ```
-此处的`sendEvent()`方法是`NuPlayerDriver`父类`MediaPlayerBase`的:
+此处的`sendEvent()`方法是`NuPlayerDriver`父类`MediaPlayerBase`的:  
 ```
 // frameworks/av/include/media/MediaPlayerInterface.h
 class MediaPlayerBase : public RefBase
@@ -1263,7 +1521,7 @@ public:
     }
     ... ...
 ```
-`mPlayer`的类型是`MediaPlayerBase::Listener`, 其还有一个子实现:`MediaPlayerService::Client::Listener`:
+`mPlayer`的类型是`MediaPlayerBase::Listener`, 其还有一个子实现:`MediaPlayerService::Client::Listener`:  
 ```
 // frameworks/av/media/libmediaplayerservice/MediaPlayerService.h
 class MediaPlayerService : public BnMediaPlayerService
@@ -1286,7 +1544,7 @@ class MediaPlayerService : public BnMediaPlayerService
         };
         ... ...
 ```
-综上所述`MediaPlayerService::Client::notify()`被调用:
+综上所述`MediaPlayerService::Client::notify()`被调用:  
 ```
 // frameworks/av/media/libmediaplayerservice/MediaPlayerService.cpp
 void MediaPlayerService::Client::notify(
@@ -1307,7 +1565,7 @@ void MediaPlayerService::Client::notify(
     }
 }
 ```
-`IMediaPlayerClient`将调用回应用的`MediaPlayer`, 因此应用的`MediaPlayer::notify()`通过Binder被调用:
+`IMediaPlayerClient`将调用回应用的`MediaPlayer`, 因此应用的`MediaPlayer::notify()`通过Binder被调用:  
 ```
 // frameworks/av/media/libmedia/mediaplayer.cpp
 void MediaPlayer::notify(int msg, int ext1, int ext2, const Parcel *obj)
@@ -1339,7 +1597,7 @@ void MediaPlayer::notify(int msg, int ext1, int ext2, const Parcel *obj)
     }
 }
 ```
-`mSignal.signal()`此场景下没有流程在等待(只有`MediaPlayer::notify()`时才等待), 此时`mListener`的类型是`MediaPlayerListener`, 其实现是`JNIMediaPlayerListener`, 因此:
+`mSignal.signal()`此场景下没有流程在等待(只有`MediaPlayer::notify()`时才等待), 此时`mListener`的类型是`MediaPlayerListener`, 其实现是`JNIMediaPlayerListener`, 因此:  
 ```
 // frameworks/base/media/jni/android_media_MediaPlayer.cpp
 void JNIMediaPlayerListener::notify(int msg, int ext1, int ext2, const Parcel *obj)
@@ -1398,7 +1656,7 @@ public class MediaPlayer extends PlayerBase
         }
     }
 ```
-`mEventHandler`的类型是`MediaPlayer.EventHandler`故:
+`mEventHandler`的类型是`MediaPlayer.EventHandler`故:  
 ```
 // frameworks/base/media/java/android/media/MediaPlayer.java
 
@@ -1436,7 +1694,7 @@ public class MediaPlayer extends PlayerBase
                 return;
                 ... ...
 ```
-而`mOnPreparedListener`是上层通过`setOnPreparedListener()`设置的. 其实现:
+而`mOnPreparedListener`是上层通过`setOnPreparedListener()`设置的. 其实现:  
 ```
 // frameworks/base/core/java/android/widget/VideoView.java
     @UnsupportedAppUsage
@@ -1464,3 +1722,109 @@ public class MediaPlayer extends PlayerBase
     };
 ```
 此时视频的播放仍未开始, 因此`if (mVideoWidth != 0 && mVideoHeight != 0)`条件不成立, 且此时`if (mTargetState == STATE_PLAYING)`条件也不满足.
+
+### `NuPlayer::GenericSource::postReadBuffer()`开始预读取解码数据
+回到`NuPlayer::GenericSource::finishPrepareAsync()`中, 通过`NuPlayer::GenericSource::postReadBuffer()`预读取一些数据:
+```
+// frameworks/av/media/libmediaplayerservice/nuplayer/GenericSource.cpp
+void NuPlayer::GenericSource::postReadBuffer(media_track_type trackType) {
+    if ((mPendingReadBufferTypes & (1 << trackType)) == 0) {
+        mPendingReadBufferTypes |= (1 << trackType);
+        sp<AMessage> msg = new AMessage(kWhatReadBuffer, this);
+        msg->setInt32("trackType", trackType);
+        msg->post();
+    }
+}
+
+void NuPlayer::GenericSource::onMessageReceived(const sp<AMessage> &msg) {
+    Mutex::Autolock _l(mLock);
+    switch (msg->what()) {
+        ...
+      case kWhatReadBuffer:
+      {
+          onReadBuffer(msg);
+          break;
+      }
+      ...
+    }
+    ...
+}
+
+void NuPlayer::GenericSource::onReadBuffer(const sp<AMessage>& msg) {
+    int32_t tmpType;
+    CHECK(msg->findInt32("trackType", &tmpType));
+    media_track_type trackType = (media_track_type)tmpType;
+    mPendingReadBufferTypes &= ~(1 << trackType);
+    readBuffer(trackType);
+}
+
+void NuPlayer::GenericSource::readBuffer(
+        media_track_type trackType, int64_t seekTimeUs, MediaPlayerSeekMode mode,
+        int64_t *actualTimeUs, bool formatChange) {
+    Track *track;
+    size_t maxBuffers = 1;
+    ...
+    int32_t generation = getDataGeneration(trackType);
+    for (size_t numBuffers = 0; numBuffers < maxBuffers; ) {
+        Vector<MediaBufferBase *> mediaBuffers;
+        status_t err = NO_ERROR;
+
+        sp<IMediaSource> source = track->mSource;
+        mLock.unlock();
+        if (couldReadMultiple) {
+            err = source->readMultiple(
+                    &mediaBuffers, maxBuffers - numBuffers, &options);
+        } else ...
+        ...
+        for (; id < count; ++id) {
+            int64_t timeUs;
+            MediaBufferBase *mbuf = mediaBuffers[id];
+            ...
+            queueDiscontinuityIfNeeded(seeking, formatChange, trackType, track);
+
+            sp<ABuffer> buffer = mediaBufferToABuffer(mbuf, trackType);
+            ...
+            track->mPackets->queueAccessUnit(buffer);
+            formatChange = false;
+            seeking = false;
+            ++numBuffers;
+        }
+        ...
+    }
+    ...
+}
+```
+`source`的类型是`IMediaSource`, 所以会调用到:`media.extractor`中的`status_t BnMediaSource::onTransact()`:
+```
+// frameworks/av/media/libmedia/IMediaSource.cpp
+status_t BnMediaSource::onTransact(
+    uint32_t code, const Parcel& data, Parcel* reply, uint32_t flags)
+{
+    switch (code) {
+        ...
+        case READMULTIPLE: {
+            ALOGV("readMultiple");
+            ...
+            for (; bufferCount < maxNumBuffers; ++bufferCount, ++mBuffersSinceStop) {
+                MediaBuffer *buf = nullptr;
+                ret = read((MediaBufferBase **)&buf, useOptions ? &opts : nullptr);
+                ...
+                if (length >= (supportNonblockingRead() && buf->mMemory != nullptr ?
+                        kTransferSharedAsSharedThreshold : kTransferInlineAsSharedThreshold)) {
+                    if (buf->mMemory != nullptr) {
+                        ALOGV("Use shared memory: %zu", length);
+                        transferBuf = buf;
+                    } else {
+                        ALOGV("Large buffer %zu without IMemory!", length);
+                        ret = mGroup->acquire_buffer(...
+                        ...
+                    }
+                }
+            }
+            reply->writeInt32(NULL_BUFFER); // Indicate no more MediaBuffers.
+            reply->writeInt32(ret);
+            ALOGV("readMultiple status %d, bufferCount %u, sinceStop %u",
+                    ret, bufferCount, mBuffersSinceStop);
+            return NO_ERROR;
+            ...
+```
