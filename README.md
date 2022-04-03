@@ -1,10 +1,19 @@
 # 目录
-* [使用python-construct解析二进制文件](python-construct.md)
-* [Android S下的eBPF](BPF.md)
-* [几种调试方法](debugs.md)
-* [Ubuntu环境Camera相关的gdb/lldb调试](gdbclient.md)
-* [Binder应用层的一个情景分析](binder.md)
-* [Android VSync与渲染](VSync.md)
-* [Luancher3 启动应用](AppStart.md)
-* [系统相册播放相机录制的视频](Play.md)
-* [Camera在拍照模式和视频模式使用的API差异](CameraPreview.md)
+
+* 原生播放器
+  * [配图](out/MediaCodec/MediaCodec.png) 
+  * [`MediaPlayer`的创建与配置](play/mediaplayer.md)  
+  * [`MediaPlayer.setDataSource()`](play/mediaplayersetdatasource.md)  
+  * [`MediaPlayer.setDisplay()`](play/mediaplayersetdisplay.md)  
+  * [`MediaPlayer.prepareAsync()`](play/mediaplayerprepareasync.md)  
+  * [`MediaPlayer.start()`](play/mediaplayerstart.md)  
+  * [来自`Codec2`的`HidlListener::onWorkDone()`](hidllisteneronworkdone.md)  
+* 杂  
+  * [使用python-construct解析二进制文件](python-construct.md)
+  * [Android S下的eBPF](BPF.md)
+  * [几种调试方法](debugs.md)
+  * [Ubuntu环境Camera相关的gdb/lldb调试](gdbclient.md)
+  * [Binder应用层的一个情景分析](binder.md)
+  * [Android VSync与渲染](VSync.md)
+  * [Luancher3 启动应用](AppStart.md)
+  * [Camera在拍照模式和视频模式使用的API差异](CameraPreview.md)
