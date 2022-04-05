@@ -1314,7 +1314,7 @@ media_status_t MPEG4Source::start() {
     const size_t kInitialBuffers = 2;
     const size_t kMaxBuffers = 8;
     const size_t realMaxBuffers = min(kMaxBufferSize / max_size, kMaxBuffers);
-    `mBufferGroup`->init(kInitialBuffers, max_size, realMaxBuffers);
+    mBufferGroup->init(kInitialBuffers, max_size, realMaxBuffers);
     mSrcBuffer = new (std::nothrow) uint8_t[max_size];
     if (mSrcBuffer == NULL) {
         // file probably specified a bad max size
@@ -1793,6 +1793,29 @@ void NuPlayer::GenericSource::readBuffer(
     }
     ...
 }
+
+// frameworks/av/media/libmedia/IMediaSource.cpp
+class BpMediaSource : public BpInterface<IMediaSource> {
+public:
+    ...
+    virtual status_t readMultiple(
+            Vector<MediaBufferBase *> *buffers, uint32_t maxNumBuffers,
+            const MediaSource::ReadOptions *options) {
+        ALOGV("readMultiple");
+        if (buffers == NULL || !buffers->isEmpty()) {
+            return BAD_VALUE;
+        }
+        Parcel data, reply;
+        data.writeInterfaceToken(BpMediaSource::getInterfaceDescriptor());
+        data.writeUint32(maxNumBuffers);
+        if (options != nullptr) {
+            data.writeByteArray(sizeof(*options), (uint8_t*) options);
+        }
+        status_t ret = remote()->transact(READMULTIPLE, data, &reply);
+        ...
+    }
+    ...
+}
 ```
 `source`的类型是`IMediaSource`, 所以会调用到:`media.extractor`中的`status_t BnMediaSource::onTransact()`:
 ```
@@ -1817,14 +1840,423 @@ status_t BnMediaSource::onTransact(
                     } else {
                         ALOGV("Large buffer %zu without IMemory!", length);
                         ret = mGroup->acquire_buffer(...
-                        ...
+                        if (ret != OK
+                                || transferBuf == nullptr
+                                || transferBuf->mMemory == nullptr) {
+                            ...
+                        } else {
+                            memcpy(transferBuf->data(), (uint8_t*)buf->data() + offset, length);
+                            ...
+                        }
                     }
                 }
+                if (transferBuf != nullptr) { // Using shared buffers.
+                    uint64_t index = mIndexCache.lookup(transferBuf->mMemory);
+                    if (index == 0) {
+                        index = mIndexCache.insert(transferBuf->mMemory);
+                        reply->writeInt32(SHARED_BUFFER);
+                        reply->writeUint64(index);
+                        reply->writeStrongBinder(IInterface::asBinder(transferBuf->mMemory));
+                        ALOGV("SHARED_BUFFER(%p) %llu",
+                                transferBuf, (unsigned long long)index);
+                    } else {
+                        reply->writeInt32(SHARED_BUFFER_INDEX);
+                        reply->writeUint64(index);
+                        ALOGV("SHARED_BUFFER_INDEX(%p) %llu",
+                                transferBuf, (unsigned long long)index);
+                    }
+                    reply->writeInt32(offset);
+                    reply->writeInt32(length);
+                    buf->meta_data().writeToParcel(*reply);
+                    transferBuf->addRemoteRefcount(1);
+                    if (transferBuf != buf) {
+                        transferBuf->release(); // release local ref
+                    } else if (!supportNonblockingRead()) {
+                        maxNumBuffers = 0; // stop readMultiple with one shared buffer.
+                    }
+                } else {
+                    ALOGV_IF(buf->mMemory != nullptr,
+                            "INLINE(%p) %zu shared mem available, but only %zu used",
+                            buf, buf->mMemory->size(), length);
+                    reply->writeInt32(INLINE_BUFFER);
+                    reply->writeByteArray(length, (uint8_t*)buf->data() + offset);
+                    buf->meta_data().writeToParcel(*reply);
+                    inlineTransferSize += length;
+                    if (inlineTransferSize > kInlineMaxTransfer) {
+                        maxNumBuffers = 0; // stop readMultiple if inline transfer is too large.
+                    }
+                }
+                buf->release();
             }
             reply->writeInt32(NULL_BUFFER); // Indicate no more MediaBuffers.
             reply->writeInt32(ret);
             ALOGV("readMultiple status %d, bufferCount %u, sinceStop %u",
                     ret, bufferCount, mBuffersSinceStop);
             return NO_ERROR;
-            ...
+        }
+        ...
+        default:
+            return BBinder::onTransact(code, data, reply, flags);
+    }
+}
 ```
+这个函数看起来比较复杂, 大体叙述一下它主要的工作:
+* 循环读取请求的buffer
+  * 调用`read()`执行读取, 结果为一个`MediaBuffer`
+  * 判断解析出来的`MediaBuffer`, 分两种情况:
+    * `MediaBuffer`能用`binder`传递, 直接到最后一个`else`的位置通过`reply->writeByteArray()`写入数据到`binder`
+    * `MediaBuffer`不能通过`binder`传递, 这里又分两种情况:
+      * 返回的`MediaBuffer`未使用共享内存, 此时抱怨一下, 然后从`RemoteMediaSource`的父类`BnMediaSource`所持有的`MediaBufferGroup`中分配一个共享内存的`MediaBuffer`, 然后获取解码器返回的数据, 拷贝到新分配的共享内存中
+      * 返回的`MediaBuffer`使用的为共享内存, 则直接向后传递, 传递到后面, 如果是共享内存还分两种情况:
+        * 共享内存形式的`MediaBuffer`中的`IMemory`是否有缓存在`BnMediaSource`的`mIndexCache`(类型为`IndexCache`)中, 如果没有, `mIndexCache.lookup()`返回的`index`就是`0`, 所以插入到缓存当中, 等待后续获取
+
+目前在本人使用的 `Google Pixel 3 XL` 上, 对于 `H264` 和 `AAC` 两种格式, 未出现`mGroup->acquire_buffer()`的情形.
+
+接下来通过`read()`函数, 检查`MediaBuffer`的创建(注意, 在`MediaBufferGroup::init()`时已经申请了`kInitialBuffers`(值为`2`))个`MediaBuffer`, 后问时会考虑进去这个前提:
+```
+// frameworks/av/media/libstagefright/RemoteMediaSource.cpp
+status_t RemoteMediaSource::read(
+        MediaBufferBase **buffer, const MediaSource::ReadOptions *options) {
+    return mTrack->read(buffer, reinterpret_cast<const MediaSource::ReadOptions*>(options));
+}
+
+// frameworks/av/media/libstagefright/MediaTrack.cpp
+status_t MediaTrackCUnwrapper::read(MediaBufferBase **buffer, const ReadOptions *options) {
+    ...
+    CMediaBuffer *buf = nullptr;
+    media_status_t ret = wrapper->read(wrapper->data, &buf, opts, seekPosition);
+    if (ret == AMEDIA_OK && buf != nullptr) {
+        *buffer = (MediaBufferBase*)buf->handle;
+        MetaDataBase &meta = (*buffer)->meta_data();
+        AMediaFormat *format = buf->meta_data(buf->handle);
+        // only convert the keys we're actually expecting, as doing
+        // the full convertMessageToMetadata() for every buffer is
+        // too expensive
+        int64_t val64;
+        if (format->mFormat->findInt64("timeUs", &val64)) {
+            meta.setInt64(kKeyTime, val64);
+            ...
+        }
+    } else {
+        *buffer = nullptr;
+    }
+
+    return reverse_translate_error(ret);
+}
+
+// frameworks/av/include/media/MediaExtractorPluginHelper.h
+inline CMediaTrack *wrap(MediaTrackHelper *track) {
+    ...
+    wrapper->read = [](void *data, CMediaBuffer **buffer,  uint32_t options, int64_t seekPosUs)
+            -> media_status_t {
+        MediaTrackHelper::ReadOptions opts(options, seekPosUs);
+        MediaBufferHelper *buf = NULL;
+        media_status_t ret = ((MediaTrackHelper*)data)->read(&buf, &opts);
+        if (ret == AMEDIA_OK && buf != nullptr) {
+            *buffer = buf->mBuffer;
+        }
+        return ret;
+    };
+    ...
+}
+
+// frameworks/av/media/extractors/mp4/MPEG4Extractor.cpp
+media_status_t MPEG4Source::read(
+        MediaBufferHelper **out, const ReadOptions *options) {
+    ...
+    if (mBuffer == NULL) {
+        ...
+        err = mBufferGroup->acquire_buffer(&mBuffer);
+        ...
+    }
+    ...
+}
+
+// frameworks/av/include/media/MediaExtractorPluginHelper.h
+class MediaBufferGroupHelper {
+private:
+    CMediaBufferGroup *mGroup;
+    std::map<CMediaBuffer*, MediaBufferHelper*> mBufferHelpers;
+public:
+    media_status_t acquire_buffer(
+            MediaBufferHelper **buffer, bool nonBlocking = false, size_t requestedSize = 0) {
+        CMediaBuffer *buf = nullptr;
+        media_status_t ret =
+                mGroup->acquire_buffer(mGroup->handle, &buf, nonBlocking, requestedSize);
+        if (ret == AMEDIA_OK && buf != nullptr) {
+            auto helper = mBufferHelpers.find(buf);
+            if (helper == mBufferHelpers.end()) {
+                MediaBufferHelper* newHelper = new MediaBufferHelper(buf);
+                mBufferHelpers.insert(std::make_pair(buf, newHelper));
+                *buffer = newHelper;
+            } else {
+                *buffer = helper->second;
+            }
+        } else {
+            *buffer = nullptr;
+        }
+        return ret;
+    }
+    ...
+}
+
+// frameworks/av/media/libstagefright/include/media/stagefright/MediaBufferGroup.h
+class MediaBufferGroup : public MediaBufferObserver {
+public:
+    CMediaBufferGroup *wrap() {
+        ...
+        mWrapper->acquire_buffer = [](void *handle,
+                CMediaBuffer **buf, bool nonBlocking, size_t requestedSize) -> media_status_t {
+            MediaBufferBase *acquiredBuf = nullptr;
+            status_t err = ((MediaBufferGroup*)handle)->acquire_buffer(
+                    &acquiredBuf, nonBlocking, requestedSize);
+            if (err == OK && acquiredBuf != nullptr) {
+                *buf = acquiredBuf->wrap();
+            } else {
+                *buf = nullptr;
+            }
+            return translate_error(err);
+        };
+        ...
+    }
+
+// frameworks/av/media/libstagefright/foundation/MediaBufferGroup.cpp
+status_t MediaBufferGroup::acquire_buffer(
+        MediaBufferBase **out, bool nonBlocking, size_t requestedSize) {
+    Mutex::Autolock autoLock(mInternal->mLock);
+    for (;;) {
+        ...
+        auto free = mInternal->mBuffers.end();
+        for (auto it = mInternal->mBuffers.begin(); it != mInternal->mBuffers.end(); ++it) {
+            const size_t size = (*it)->size();
+            ...
+        }
+        if (buffer == nullptr
+                && (free != mInternal->mBuffers.end()
+                    || mInternal->mBuffers.size() < mInternal->mGrowthLimit)) {
+            // We alloc before we free so failure leaves group unchanged.
+            const size_t allocateSize = requestedSize == 0 ? biggest :
+                    requestedSize < SIZE_MAX / 3 * 2 /* NB: ordering */ ?
+                    requestedSize * 3 / 2 : requestedSize;
+            buffer = new MediaBuffer(allocateSize);
+            ...
+        }
+        if (buffer != nullptr) {
+            buffer->add_ref();
+            buffer->reset();
+            *out = buffer;
+            return OK;
+        }
+        if (nonBlocking) {
+            *out = nullptr;
+            return WOULD_BLOCK;
+        }
+        // All buffers are in use, block until one of them is returned.
+        mInternal->mCondition.wait(mInternal->mLock);
+    }
+    // Never gets here.
+}
+
+// frameworks/av/media/libstagefright/foundation/MediaBuffer.cpp
+MediaBuffer::MediaBuffer(size_t size)
+    : mObserver(NULL),
+      mRefCount(0),
+      mData(NULL),
+      mSize(size),
+      mRangeOffset(0),
+      mRangeLength(size),
+      mOwnsData(true),
+      mMetaData(new MetaDataBase) {
+#if !defined(NO_IMEMORY) && !defined(__ANDROID_APEX__)
+    if (size < kSharedMemThreshold
+            || std::atomic_load_explicit(&mUseSharedMemory, std::memory_order_seq_cst) == 0) {
+#endif
+        mData = malloc(size);
+#if !defined(NO_IMEMORY) && !defined(__ANDROID_APEX__)
+    } else {
+        ALOGV("creating memoryDealer");
+        size_t newSize = 0;
+        if (!__builtin_add_overflow(size, sizeof(SharedControl), &newSize)) {
+            sp<MemoryDealer> memoryDealer = new MemoryDealer(newSize, "MediaBuffer");
+            mMemory = memoryDealer->allocate(newSize);
+        }
+        if (mMemory == NULL) {
+            ALOGW("Failed to allocate shared memory, trying regular allocation!");
+            mData = malloc(size);
+            if (mData == NULL) {
+                ALOGE("Out of memory");
+            }
+        } else {
+            getSharedControl()->clear();
+            mData = (uint8_t *)mMemory->unsecurePointer() + sizeof(SharedControl);
+            ALOGV("Allocated shared mem buffer of size %zu @ %p", size, mData);
+        }
+    }
+#endif
+}
+```
+上述过程, `MediaBuffer`根据其`size`的要求, 自行确定了是否使用共享内存的方式创建, 创建完成后, 数据指针被保存到其自身的`mData`成员中, 创建完成后`MediaBuffer`被封装到`newHelper->mBuffer->handle`中返回给上层
+在`CMediaBufferGroup::acquire_buffer()`中, `newHelper`:
+`newHelper`: `MediaBufferHelper`
+`newHelper->mBuffer`: `CMediaBuffer`
+`newHelper->mBuffer->handle`: `MediaBufferBase` -> `MediaBuffer`  
+
+对于上述过程的最后一个函数, 也就是`MediaBufferGroup::acquire_buffer()`中, 只有`for (auto it = mInternal->mBuffers.begin(); it != mInternal->mBuffers.end(); ++it)`没有找到合适的`buffer`, 才会申请新的`buffer`
+
+至此, 可以知道`mediaserver`所获取到的数据结构即`MediaBufferBase`, 回到`BpMediaSource::readMultiple()`
+```
+
+class BpMediaSource : public BpInterface<IMediaSource> {
+public:
+    virtual status_t readMultiple(
+            Vector<MediaBufferBase *> *buffers, uint32_t maxNumBuffers,
+            const MediaSource::ReadOptions *options) {
+        ALOGV("readMultiple");
+        if (buffers == NULL || !buffers->isEmpty()) {
+            return BAD_VALUE;
+        }
+        Parcel data, reply;
+        data.writeInterfaceToken(BpMediaSource::getInterfaceDescriptor());
+        data.writeUint32(maxNumBuffers);
+        if (options != nullptr) {
+            data.writeByteArray(sizeof(*options), (uint8_t*) options);
+        }
+        status_t ret = remote()->transact(READMULTIPLE, data, &reply);
+        mMemoryCache.gc();
+        if (ret != NO_ERROR) {
+            return ret;
+        }
+        // wrap the returned data in a vector of MediaBuffers
+        int32_t buftype;
+        uint32_t bufferCount = 0;
+        while ((buftype = reply.readInt32()) != NULL_BUFFER) {
+            LOG_ALWAYS_FATAL_IF(bufferCount >= maxNumBuffers,
+                    "Received %u+ buffers and requested %u buffers",
+                    bufferCount + 1, maxNumBuffers);
+            MediaBuffer *buf;
+            if (buftype == SHARED_BUFFER || buftype == SHARED_BUFFER_INDEX) {
+                uint64_t index = reply.readUint64();
+                ALOGV("Received %s index %llu",
+                        buftype == SHARED_BUFFER ? "SHARED_BUFFER" : "SHARED_BUFFER_INDEX",
+                        (unsigned long long) index);
+                sp<IMemory> mem;
+                if (buftype == SHARED_BUFFER) {
+                    sp<IBinder> binder = reply.readStrongBinder();
+                    mem = interface_cast<IMemory>(binder);
+                    LOG_ALWAYS_FATAL_IF(mem.get() == nullptr,
+                            "Received NULL IMemory for shared buffer");
+                    mMemoryCache.insert(index, mem);
+                } else {
+                    mem = mMemoryCache.lookup(index);
+                    LOG_ALWAYS_FATAL_IF(mem.get() == nullptr,
+                            "Received invalid IMemory index for shared buffer: %llu",
+                            (unsigned long long)index);
+                }
+                size_t offset = reply.readInt32();
+                size_t length = reply.readInt32();
+                buf = new RemoteMediaBufferWrapper(mem);
+                buf->set_range(offset, length);
+                buf->meta_data().updateFromParcel(reply);
+            } else { // INLINE_BUFFER
+                int32_t len = reply.readInt32();
+                ALOGV("INLINE_BUFFER status %d and len %d", ret, len);
+                buf = new MediaBuffer(len);
+                reply.read(buf->data(), len);
+                buf->meta_data().updateFromParcel(reply);
+            }
+            buffers->push_back(buf);
+            ++bufferCount;
+            ++mBuffersSinceStop;
+        }
+        ret = reply.readInt32();
+        ALOGV("readMultiple status %d, bufferCount %u, sinceStop %u",
+                ret, bufferCount, mBuffersSinceStop);
+        if (bufferCount && ret == WOULD_BLOCK) {
+            ret = OK;
+        }
+        return ret;
+    }
+    ...
+}
+
+// frameworks/av/media/libstagefright/include/media/stagefright/MediaBuffer.h
+class MediaBuffer : public MediaBufferBase {
+public:
+    ...
+#if !defined(NO_IMEMORY) && !defined(__ANDROID_APEX__)
+    MediaBuffer(const sp<IMemory> &mem) :
+         // TODO: Using unsecurePointer() has some associated security pitfalls
+         //       (see declaration for details).
+         //       Either document why it is safe in this case or address the
+         //       issue (e.g. by copying).
+        MediaBuffer((uint8_t *)mem->unsecurePointer() + sizeof(SharedControl), mem->size()) {
+        // delegate and override mMemory
+        mMemory = mem;
+    }
+#endif
+    ...
+}
+
+// frameworks/av/media/libstagefright/foundation/MediaBuffer.cpp
+MediaBuffer::MediaBuffer(void *data, size_t size)
+    : mObserver(NULL),
+      mRefCount(0),
+      mData(data),
+      mSize(size),
+      mRangeOffset(0),
+      mRangeLength(size),
+      mOwnsData(false),
+      mMetaData(new MetaDataBase) {
+}
+```
+显然, 构造了`RemoteMediaBufferWrapper`(其继承关系:`RemoteMediaBufferWrapper` -> `MediaBuffer` -> `MediaBufferBase`), 再次回到`NuPlayer::GenericSource::readBuffer()`:
+```
+void NuPlayer::GenericSource::readBuffer(
+        media_track_type trackType, int64_t seekTimeUs, MediaPlayerSeekMode mode,
+        int64_t *actualTimeUs, bool formatChange) { 1;
+    ...
+    int32_t generation = getDataGeneration(trackType);
+    for (size_t numBuffers = 0; numBuffers < maxBuffers; ) {
+        ...
+        if (couldReadMultiple) {
+            err = source->readMultiple(
+                    &mediaBuffers, maxBuffers - numBuffers, &options);
+        } else ...
+        ...
+        for (; id < count; ++id) {
+            int64_t timeUs;
+            MediaBufferBase *mbuf = mediaBuffers[id];
+            ...
+            queueDiscontinuityIfNeeded(seeking, formatChange, trackType, track);
+
+            sp<ABuffer> buffer = mediaBufferToABuffer(mbuf, trackType);
+            ...
+            track->mPackets->queueAccessUnit(buffer);
+            formatChange = false;
+            seeking = false;
+            ++numBuffers;
+        }
+        ...
+    }
+    ...
+}
+
+// frameworks/av/media/libmediaplayerservice/nuplayer/GenericSource.cpp
+sp<ABuffer> NuPlayer::GenericSource::mediaBufferToABuffer(
+        MediaBufferBase* mb,
+        media_track_type trackType) {
+    ...
+    if (mIsDrmProtected)   {
+        ...
+
+    } else {
+        ab = new ABuffer(outLength);
+        memcpy(ab->data(),
+               (const uint8_t *)mb->data() + mb->range_offset(),
+               mb->range_length());
+    }
+    ...
+    return ab;
+}
+```
+此处`mediaBufferToABuffer()`将`MediaBufferBase`(类型为`RemoteMediaBufferWrapper`)转换为`ABuffer`, 并插入`GenericSource`的`track->mPackets`(音频/视频)
