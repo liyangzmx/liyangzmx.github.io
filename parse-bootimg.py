@@ -1,6 +1,5 @@
 #!/usr/bin/python2
 
-from tkinter.tix import Select
 from construct import *
 import os
 import sys
@@ -16,22 +15,10 @@ BOOT_IMAGE_HEADER_V3_SIZE = 1580
 BOOT_IMAGE_HEADER_V3_PAGESIZE = 4096
 BOOT_IMAGE_HEADER_V4_SIZE = 1584
 BOOT_IMAGE_V4_SIGNATURE_SIZE = 4096
-
-PAGE_SIZE = 2048
+FDT_HEADER_SIZE = 40
 
 def padding(size, padding):
   return (padding- (size & (padding - 1))) & (padding - 1)
-
-# boot_img_hdr_v3 = Struct (
-#   "magic" / Const(b"ANDROID!", Bytes(8)),
-#   "kernel_size" / Int32ul,
-#   "ramdisk_size" / Int32ul,
-#   "os_version" / Hex(Int32ul),
-#   "header_size" / Int32ul,
-#   Padding(4 * 4),
-#   "header_version" / Int32ul,
-#   "cmdline" / PaddedString(BOOT_EXTRA_ARGS_SIZE + BOOT_ARGS_SIZE, "ascii"),
-# )
 
 boot_img_hdr_v0 = Struct (
   "magic" / Const(BOOT_MAGIC, Bytes(BOOT_MAGIC_SIZE)),
@@ -86,10 +73,12 @@ fdt_header  = Struct (
   "boot_cpuid_phys" / Int32ub,
   "size_dt_strings" / Int32ub,
   "size_dt_struct" / Int32ub,
-  "mem_rsvmap" / Pointer(this._start + this.off_mem_rsvmap, mem_rsvmap),
-  "dt_struct" / Pointer(this._start + this.off_dt_struct, HexDump(Bytes(64))), 
-  "dt_strings" / Pointer(this._start + this.off_dt_strings, HexDump(Bytes(64))),
-  Padding(this.totalsize - 40),
+  Padding(this.off_mem_rsvmap - 40),
+  "mem_rsvmap" / mem_rsvmap,
+  "dt_struct" / HexDump(Bytes(64)),
+  Padding(this.size_dt_struct - 64), 
+  "_dt_struct_data" / Bytes(this.size_dt_strings),
+  "dt_strings" / RestreamData(this._dt_struct_data, GreedyString("ascii")),
 )
 
 dt_table_entry = Struct (
@@ -97,7 +86,7 @@ dt_table_entry = Struct (
   "dt_offset" / Int32ub,
   "id" / Int32ub,
   "rev" / Int32ub,
-  "custom" / Array(4, Int32ub),
+  "custom" / Bytes(16),
 )
 
 dt_table_header  = Struct (
@@ -118,40 +107,64 @@ dtbimg = Struct (
   "fdt_headers" / Array(this.dt_table_header.dt_entry_count, fdt_header),
 )
 
+CPIO_IMG = Struct(
+  "magic" / Const(b'070701', Bytes(6)),
+  "dev" / PaddedString(6, 'ascii'),
+  "ino" / PaddedString(6, 'ascii'),
+  "mode" / PaddedString(6, 'ascii'),
+  "uid" / PaddedString(6, 'ascii'),
+  "gid" / PaddedString(6, 'ascii'),
+  "nlink" / PaddedString(6, 'ascii'),
+  "rdev" / PaddedString(6, 'ascii'),
+  "mtime" / PaddedString(11, 'ascii'), # Timestamp(Int32ub, "msdos", "msdos"),
+  "namesize" / PaddedString(6, 'ascii'),
+  "filesize" / PaddedString(11, 'ascii'),
+)
+
 BOOTIMG = Struct(
   "header" / boot_img_hdr_v2,
+
+  # sizes
+  "_page_size" / Computed(this.header.boot_img_hdr_v1.boot_img_hdr_v0.page_size),
+  "_ramdisk_size" / Computed(this.header.boot_img_hdr_v1.boot_img_hdr_v0.ramdisk_size),
+  "_kernel_size" / Computed(this.header.boot_img_hdr_v1.boot_img_hdr_v0.kernel_size),
+  "_second_size" / Computed(this.header.boot_img_hdr_v1.boot_img_hdr_v0.second_size),
+  "_recovery_dtbo_size" / Computed(this.header.boot_img_hdr_v1.recovery_dtbo_size),
+  "_dtb_size" / Computed(this.header.dtb_size),
+
+  # Pared
   Padding(padding(boot_img_hdr_v2.sizeof(), 
-                            this.header.boot_img_hdr_v1.boot_img_hdr_v0.page_size)),
-  "kernel" / Padding(this.header.boot_img_hdr_v1.boot_img_hdr_v0.kernel_size + 
-                            padding(this.header.boot_img_hdr_v1.boot_img_hdr_v0.kernel_size, 
-                            this.header.boot_img_hdr_v1.boot_img_hdr_v0.page_size)),
-  "ramdisk" / Padding(this.header.boot_img_hdr_v1.boot_img_hdr_v0.ramdisk_size + 
-                            padding(this.header.boot_img_hdr_v1.boot_img_hdr_v0.ramdisk_size, 
-                            this.header.boot_img_hdr_v1.boot_img_hdr_v0.page_size)),
-  "second" / Padding(this.header.boot_img_hdr_v1.boot_img_hdr_v0.second_size + 
-                            padding(this.header.boot_img_hdr_v1.boot_img_hdr_v0.second_size, 
-                            this.header.boot_img_hdr_v1.boot_img_hdr_v0.page_size)),
-  "recovery_dtbo" / If(this.header.boot_img_hdr_v1.recovery_dtbo_size > 0, dtbimg),
-  Padding(padding(this.header.boot_img_hdr_v1.recovery_dtbo_size, 
-                            this.header.boot_img_hdr_v1.boot_img_hdr_v0.page_size)),
-  "dtbimg" / IfThenElse(this.header.dtb_size > 0, Select(dtbimg, fdt_header), 
-                            Padding(this.header.dtb_size +
-                            padding(this.header.dtb_size, this.header.boot_img_hdr_v1.boot_img_hdr_v0.page_size))),
+                            this._page_size)),
+  # "_kernel_data" / Bytes(this._kernel_size),
+  # "kernel" / RestreamData(this._kernel_data, Select(CompressedLZ4(GreedyBytes), Bytes(this._kernel_size))),
+  # Padding(padding(this._kernel_size, this._page_size)),
+  "kernel" / Padding(this._kernel_size + padding(this._kernel_size, this._page_size)),
+
+  # Must here
+  "ramdisk" / Bytes(this._ramdisk_size),
+  "cpio_data" / RestreamData(this.ramdisk, Compressed(GreedyBytes, "gzip")),
+  "cpio(ramdisk)" / RestreamData(this.cpio_data, CPIO_IMG),
+  Padding(padding(this._ramdisk_size, this._page_size)),
+  "second" / Padding(this._second_size + padding(this._second_size, this._page_size)),
+  "recovery_dtbo" / If(this._recovery_dtbo_size > 0, dtbimg),
+  Padding(padding(this._recovery_dtbo_size,  this._page_size)),
+  "dtbimg" / IfThenElse(this._dtb_size > 0, Select(dtbimg, fdt_header),  Padding(this._dtb_size + padding(this._dtb_size, this._page_size))),
 )
 
 if __name__ == '__main__':
-    with open(sys.argv[1], "rb") as f:
-        data = f.read()
-        bootimg = BOOTIMG.parse(data)
-        
-        # uncommit underlines to unpack root.cpio.gz
-        # offset = 0
-        # page_size = bootimg.header.boot_img_hdr_v1.boot_img_hdr_v0.page_size
-        # offset += page_size
-        # print("parge_size: ", page_size)
-        # offset += (bootimg.header.boot_img_hdr_v1.boot_img_hdr_v0.kernel_size + 
-        #            padding(bootimg.header.boot_img_hdr_v1.boot_img_hdr_v0.kernel_size, page_size))
+  setGlobalPrintFullStrings(False)
+  with open(sys.argv[1], "rb") as f:
+    data = f.read()
+    bootimg = BOOTIMG.parse(data)
+    print(bootimg)
+    
+    # uncommit underlines to unpack root.cpio.gz
+    # offset = 0
+    # page_size = bootimg.header.boot_img_hdr_v1.boot_img_hdr_v0.page_size
+    # offset += page_size
+    # print("parge_size: ", page_size)
+    # offset += (bootimg.header.boot_img_hdr_v1.boot_img_hdr_v0.kernel_size + 
+    #            padding(bootimg.header.boot_img_hdr_v1.boot_img_hdr_v0.kernel_size, page_size))
 
-        # with open("root.cpio.gz", "wb") as out:
-        #   out.write(data[offset:offset + bootimg.header.boot_img_hdr_v1.boot_img_hdr_v0.ramdisk_size])
-        print(bootimg)
+    # with open("root.cpio.gz", "wb") as out:
+    #   out.write(data[offset:offset + bootimg.header.boot_img_hdr_v1.boot_img_hdr_v0.ramdisk_size])

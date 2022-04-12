@@ -1,0 +1,123 @@
+Container: 
+    header = Container: 
+        boot_img_hdr_v1 = Container: 
+            boot_img_hdr_v0 = Container: 
+                magic = b'ANDROID!' (total 8)
+                kernel_size = 26230800
+                kernel_addr = 0x00008000
+                ramdisk_size = 13215220
+                ramdisk_addr = 0x05400000
+                second_size = 0
+                second_addr = 0x00000000
+                tags_addr = 0x00000100
+                page_size = 2048
+                header_version = 2
+                os_version = 0x16000157
+                name = u'' (total 0)
+                cmdline = u'console=ttyS1,115200n8 buildvari'... (truncated, total 45)
+                id(hash) = hexundump("""
+                0000   D0 63 83 B5 95 10 FF C4 35 70 CF 1D F3 FD 98 F5   .c......5p......
+                0010   DD C1 C8 92 00 00 00 00 00 00 00 00 00 00 00 00   ................
+                """)
+                
+            recovery_dtbo_size = 37569
+            recovery_dtbo_offset = 0x000000000259F800
+            header_size = 1660
+        dtb_size = 157149
+        dtb_addr = 0x01F00000
+    kernel = None
+    ramdisk = b'\x1f\x8b\x08\x00\x00\x00\x00\x00\x02\x03\xec\xbc\x07T\x93M'... (truncated, total 13215220)
+    cpio_data = b'07070100AE9FB100'... (truncated, total 33930752)
+    cpio(ramdisk) = Container: 
+        magic = b'070701' (total 6)
+        dev = u'00AE9F' (total 6)
+        ino = u'B10000' (total 6)
+        mode = u'41ED00' (total 6)
+        uid = u'000000' (total 6)
+        gid = u'000000' (total 6)
+        nlink = u'000000' (total 6)
+        rdev = u'000662' (total 6)
+        mtime = u'5526B400000' (total 11)
+        namesize = u'000000' (total 6)
+        filesize = u'000FC000000' (total 11)
+    second = None
+    recovery_dtbo = Container: 
+        dt_table_header = Container: 
+            magic = 0xD7B7AB1E
+            total_size = 37569
+            header_size = 32
+            dt_entry_size = 32
+            dt_entry_count = 1
+            dt_entries_offset = 32
+            page_size = 2048
+            version = 0
+        entries = ListContainer: 
+            Container: 
+                dt_size = 37505
+                dt_offset = 64
+                id = 0
+                rev = 0
+                custom = b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00' (total 16)
+        fdt_headers = ListContainer: 
+            Container: 
+                magic = 0xD00DFEED
+                totalsize = 37505
+                off_dt_struct = 56
+                off_dt_strings = 31704
+                off_mem_rsvmap = 40
+                version = 17
+                last_comp_version = 16
+                boot_cpuid_phys = 0
+                size_dt_strings = 5801
+                size_dt_struct = 31648
+                mem_rsvmap = Container: 
+                    address = 0x0000000000000000
+                    size = 0
+                dt_struct = hexundump("""
+                0000   00 00 00 01 00 00 00 00 00 00 00 03 00 00 00 1E   ................
+                0010   00 00 00 00 53 70 72 65 61 64 74 72 75 6D 20 55   ....Spreadtrum U
+                0020   4D 53 39 36 32 30 20 32 48 31 30 20 42 6F 61 72   MS9620 2H10 Boar
+                0030   64 00 00 00 00 00 00 03 00 00 00 12 00 00 00 06   d...............
+                """)
+                
+                dt_strings = u'model\x00compatible\x00sprd,sc-id\x00targ'... (truncated, total 5801)
+    dtbimg = Container: 
+        dt_table_header = Container: 
+            magic = 0xD7B7AB1E
+            total_size = 157149
+            header_size = 32
+            dt_entry_size = 32
+            dt_entry_count = 1
+            dt_entries_offset = 32
+            page_size = 2048
+            version = 0
+        entries = ListContainer: 
+            Container: 
+                dt_size = 157085
+                dt_offset = 64
+                id = 0
+                rev = 0
+                custom = b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00' (total 16)
+        fdt_headers = ListContainer: 
+            Container: 
+                magic = 0xD00DFEED
+                totalsize = 157085
+                off_dt_struct = 56
+                off_dt_strings = 142808
+                off_mem_rsvmap = 40
+                version = 17
+                last_comp_version = 16
+                boot_cpuid_phys = 0
+                size_dt_strings = 14277
+                size_dt_struct = 142752
+                mem_rsvmap = Container: 
+                    address = 0x0000000000000000
+                    size = 0
+                dt_struct = hexundump("""
+                0000   00 00 00 01 00 00 00 00 00 00 00 03 00 00 00 04   ................
+                0010   00 00 00 00 00 00 00 01 00 00 00 03 00 00 00 04   ................
+                0020   00 00 00 11 00 00 00 02 00 00 00 03 00 00 00 04   ................
+                0030   00 00 00 20 00 00 00 02 00 00 00 03 00 00 00 0F   ... ............
+                """)
+                
+                dt_strings = u'interrupt-parent\x00#address-cells\x00'... (truncated, total 14277)
