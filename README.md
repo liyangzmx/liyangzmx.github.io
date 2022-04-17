@@ -7,6 +7,7 @@
   * [`MediaPlayer.setDisplay()`](play/mediaplayersetdisplay.md)  
   * [`MediaPlayer.prepareAsync()`](play/mediaplayerprepareasync.md)  
   * [`MediaPlayer.start()`](play/mediaplayerstart.md)  
+  * [`C2SoftVpxDec`在视频软解过程中对`GraphicBuffer`的获取/填充/返回](play/vpx_dec.md)
   * [来自`Codec2`的`HidlListener::onWorkDone()`](play/hidllisteneronworkdone.md)
   * [解码过程中GraphicBuffer的流转](GraphicBuffer.md)  
 * 杂  
