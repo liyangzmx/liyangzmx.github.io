@@ -349,7 +349,7 @@ bool h2b(HardwareBuffer const& from, sp<GraphicBuffer>* to) {
     return true;
 }
 ```
-GraphicBuffer::fromAHardwareBuffer()`负责从`AHardwareBuffer`到`GraphicBuffer`的转换, 至此`GraphicBuffer`被成功导入.
+`GraphicBuffer::fromAHardwareBuffer()`负责从`AHardwareBuffer`到`GraphicBuffer`的转换, 至此`GraphicBuffer`被成功导入.
 回到上文`C2BufferQueueBlockPool::Impl::fetchFromIgbp_l()`中:
 ```
 // frameworks/av/media/codec2/vndk/platform/C2BqBuffer.cpp +235
