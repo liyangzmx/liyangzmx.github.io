@@ -23,18 +23,34 @@
       - [`CCodec`视频解码组件`Component`的查找](#ccodec视频解码组件component的查找)
     - [`MediaCodec`的配置](#mediacodec的配置)
     - [`MediaCodec`的启动](#mediacodec的启动)
-  - [解码器数据的输入](#解码器数据的输入)
-    - [解码器对编码数据的导入](#解码器对编码数据的导入)
-  - [解码器对数据的解码](#解码器对数据的解码)
-  - [解码器对图形缓存的创建](#解码器对图形缓存的创建)
-  - [解码器对解码后图形缓存的返回](#解码器对解码后图形缓存的返回)
+  - [解码器](#解码器)
+    - [编码数据缓存准备](#编码数据缓存准备)
+    - [编码数据的拷贝](#编码数据的拷贝)
+    - [编码数据的发送](#编码数据的发送)
+    - [编码数据的导入](#编码数据的导入)
+    - [视频解码](#视频解码)
+      - [图形缓存的创建](#图形缓存的创建)
+      - [视频解码返回图形缓存](#视频解码返回图形缓存)
+      - [图形缓存的接收](#图形缓存的接收)
+    - [音频解码](#音频解码)
+      - [音频解码返回数据](#音频解码返回数据)
+      - [音频数据的接收](#音频数据的接收)
   - [音画同步](#音画同步)
   - [视频渲染](#视频渲染)
+    - [本地缓冲队列](#本地缓冲队列)
+    - [SurfaceFlinger合成](#surfaceflinger合成)
+    - [硬件合成器送显](#硬件合成器送显)
   - [音频渲染](#音频渲染)
+    - [AudioTrack 共享内存写入数据](#audiotrack-共享内存写入数据)
+    - [SurfaceFlinger 重采样及混音](#surfaceflinger-重采样及混音)
+    - [Audio HAL 回放数据](#audio-hal-回放数据)
   - [Seek操作](#seek操作)
 - [附录](#附录)
   - [`MediaPlayer`将收到的通知类型](#mediaplayer将收到的通知类型)
   - [`NuPlayer`接受底层的消息主要有以下集中类型](#nuplayer接受底层的消息主要有以下集中类型)
+  - [举证](#举证)
+    - [`IMediaExtractor`](#imediaextractor)
+    - [`IMediaSource`](#imediasource)
 
 # 应用层的播放器`MediaPlayer`
 ## 初始化
@@ -318,21 +334,96 @@ Android Q 以后的版本采用`CCodec`的方式加载解码插件, 此处仅仅
 
 `NuPlayer::Decoder`通过基类`NuPlayer::DecoderBase`的`onRequestInputBuffers()`去拉取数据, 这个过程将通过`GenericSource`的`dequeueAccessUnit()`方法完成. `GenericSource::dequeueAccessUnit()`上文已经讲过. 当该函数无法从缓冲区读取到数据时会通过`postReadBuffer()`从拉流, 该函数调用的`GenericSource::readBuffer()`上文已经讲过, 此处略去.
 
-## 解码器数据的输入
+## 解码器
+### 编码数据缓存准备
+对于编码数据, 其用线性数据块`C2LinearBlock`(实现自`C2Block1D`), 底层的实现是`ION`, 其引用关系:  
+* `C2LinearBlock` => `C2Block1D`  
+  * `mImpl`: `_C2Block1DImpl` => `C2Block1D::Impl`
+    * `mAllocation`: `C2LinearAllocation` => `C2AllocationIon`
+      * `mImpl`: `C2AllocationIon::Impl`
 
-### 解码器对编码数据的导入
+`C2Block1D`是从`C2BlockPool`分配的, 其引用关系:
+* `C2BlockPool::mBase`: `C2PooledBlockPool::Impl`
+  * `mBufferPoolManager.mImpl`: `ClientManager::Impl`
+    * `mClients[x].mImpl`: `BufferPoolClient::Impl`
+      * `mLocalConnection`: `Connectoin`
+        * `mAccessor.mImpl`: `Accessor::Impl`
+          * `mAllocator`: `_C2BufferPoolAllocator` => `BufferPoolAllocator`
 
-## 解码器对数据的解码
+`C2AllocatorIon::newLinearAllocation()` 创建了上文的`C2AllocationIon`极其实现`C2AllocationIon::Impl`, 创建完成后进行的分配.
 
-## 解码器对图形缓存的创建
+### 编码数据的拷贝
 
-## 解码器对解码后图形缓存的返回
+### 编码数据的发送
+通过`objcpy()`完成`C2Work`到`Work`的转换, 后者支持序列化, 便于通过Binder发送:  
+* `C2Work[]` -> `WorkBundle`
+  * `C2Work` -> `Work`  
+    * `C2FrameData` -> `FrameData`
+      * `C2InfoBuffer` -> `InfoBuffer`
+      * `C2Buffer` -> `Buffer`
+        * `C2Block` -> `Block`
+    * `C2Worklet` -> `Worklet`
+      * `C2FrameData` -> `FrameData`
+        * `C2InfoBuffer` -> `InfoBuffer`
+        * `C2Buffer` -> `Buffer`
+          * `C2Block[1|2]D` -> `Block`
+
+### 编码数据的导入
+`mediaserver`通过`IComponent::queue()`发送`C2Work`到`media.swcodec`, 在服务端, `objcpy`负责`WorkBundle`中的`Work`到`C2Work`的转换, 大概的层级关系:    
+* `WorkBundle` -> `C2Work[]`
+  *`Work` -> `C2Work`  
+    * `FrameData` -> `C2FrameData`
+      * `InfoBuffer` -> `C2InfoBuffer`
+      * `Buffer` -> `C2Buffer`
+        * `Block` -> `C2Block`
+    * `Worklet` -> `C2Worklet`
+      * `FrameData` -> `C2FrameData`
+        * `InfoBuffer` -> `C2InfoBuffer`
+        * `Buffer` -> `C2Buffer`
+          * `Block` -> `C2Block[1|2]D`
+
+这里`C2Block1D`的实现是`C2LinearBlock`, 通过底层的`C2AllocationIon::Impl::map()`可完成对`ION`缓存的映射, 获取待解码的数据.
+
+解码器所在进程通过`SimpleC2Component::queue_nb()`响应binder请求, 并获取`C2Block1D`描述后, 发送`kWhatProcess`消息, 该消息由`SimpleC2Component::processQueue()`响应, 该方法直接调用子类的实现, 本文视频采用`VP9`的编码, 因此子类实现为`C2SoftVpxDec::process()`, 其同构`work->input.buffers[0]->data().linearBlocks().front().map().get()`获取输入数据, 这个调用可分如下步骤看待:  
+* `work->input.buffers[0]->data()`返回`C2BufferData`类型
+* `C2ConstLinearBlock::linearBlocks()`返回`C2ConstLinearBlock`类型, 该类型本质上是`C2Block1D`
+* `C2ConstLinearBlock::map()`返回`C2ReadView`, 此时`C2ConstLinearBlock`通过实现`C2Block1D::Impl`所保存的`C2LinearAllocation`对`ION`的缓存进行映射, 映射完成后创建`AcquirableReadViewBuddy`(父类为`C2ReadView`)并将数据保存到它的`mImpl`(类型为: `ReadViewBuddy::Impl`, 实际上就是`C2ReadView::Impl`)中.  
+
+接下来`uint8_t *bitstream = const_cast<uint8_t *>(rView.data() + inOffset`, 是通过`C2ReadView::data()`获取数据指针, 正式从上面的`C2ReadView::Impl.mData`获取的.
+
+### 视频解码
+`vpx_codec_decode()`完成解码工作, 前提是输入数据长度有效.
+
+#### 图形缓存的创建
+解码完成后解码器从`C2BlockPool`中通过`fetchGraphicBlock()`拉取一个`C2GraphicBlock`, 此时将触发`GraphicBuffer`的创建.
+
+#### 视频解码返回图形缓存
+
+#### 图形缓存的接收
+
+### 音频解码
+
+#### 音频解码返回数据
+
+#### 音频数据的接收
 
 ## 音画同步
 
 ## 视频渲染
 
+### 本地缓冲队列
+
+### SurfaceFlinger合成
+
+### 硬件合成器送显
+
 ## 音频渲染
+
+### AudioTrack 共享内存写入数据
+
+### SurfaceFlinger 重采样及混音
+
+### Audio HAL 回放数据
 
 ## Seek操作
 
@@ -453,3 +544,151 @@ Android Q 以后的版本采用`CCodec`的方式加载解码插件, 此处仅仅
     * `DecoderBase::kWhatResumeCompleted`: 恢复播放
     * `DecoderBase::kWhatError`: 解码遇到错误
       * `"err"`: 错误原因, 错误码将通过`MEDIA_INFO`类型报给上层
+
+## 举证
+
+### `IMediaExtractor`
+`MediaExtractorService::makeExtractor()`下断点:  
+```
+p *((TinyCacheSource *)((RemoteMediaExtractor *)0x0000007d68639df0)->mSource.m_ptr->mWrapper->handle)
+warning: `this' is not accessible (substituting 0). Couldn't load 'this' because its value couldn't be evaluated
+(android::TinyCacheSource) $35 = {
+  android::DataSource = {
+    mWrapper = 0x0000007d4864b410
+  }
+  mSource = {
+    m_ptr = 0x0000007d58647640
+  }
+  mCache = "..."...
+  mCachedOffset = 405144
+  mCachedSize = 2048
+  mName = (mString = "TinyCacheSource(CallbackDataSource(4894->4875, RemoteDataSource(FileSource(fd(/storage/emulated/0/Movies/VID_20220317_221515.mp4), 0, 4948142))))")
+}
+```
+
+对于地址`0x0000007d58647640`, 已经知道其类型为`CallbackDataSource`, 因此:  
+```
+p *(CallbackDataSource *)0x0000007d58647640
+warning: `this' is not accessible (substituting 0). Couldn't load 'this' because its value couldn't be evaluated
+(android::CallbackDataSource) $37 = {
+  android::DataSource = {
+    mWrapper = nullptr
+  }
+  mIDataSource = (m_ptr = 0x0000007d88645ab0)
+  mMemory = (m_ptr = 0x0000007d68639cd0)
+  mIsClosed = false
+  mName = (mString = "CallbackDataSource(4894->4875, RemoteDataSource(FileSource(fd(/storage/emulated/0/Movies/VID_20220317_221515.mp4), 0, 4948142)))")
+}
+```
+通过`mName`确认到以上所有类型行的总结都是正确的
+
+### `IMediaSource`
+为了验证该总结的正确性, 通过调试器:  
+```
+p track
+(const android::sp<android::IMediaSource>) $79 = (m_ptr = 0x0000007d98639b10)
+得到的 track 的类型应为 RemoteMediaSource, 因此:
+
+p *(android::RemoteMediaSource *)0x0000007d98639b10
+(android::RemoteMediaSource) $80 = {
+  mExtractor = {
+    m_ptr = 0x0000007d68639fd0
+  }
+  mTrack = 0x0000007d3863c290
+  mExtractorPlugin = (m_ptr = 0x0000007d7863d9b0)
+}
+```
+得到的 mTrack 类型应为 MediaTrackCUnwrapper, 因此
+```
+p *(android::MediaTrackCUnwrapper *)0x0000007d3863c290
+(android::MediaTrackCUnwrapper) $81 = {
+  wrapper = 0x0000007d586463d0
+  bufferGroup = nullptr
+}
+```
+得到的 wrapper 类型应为 CMediaTrack, 因此
+```
+p *(CMediaTrack *)0x0000007d586463d0
+(CMediaTrack) $83 = {
+  data = 0x0000007de8638ed0
+  free = 0x0000007d143696b8 (libmp4extractor.so`android::wrap(android::MediaExtractorPluginHelper*)::'lambda'(void*)::__invoke(void*) + 4)
+  start = 0x0000007d143696bc (libmp4extractor.so`android::wrap(android::MediaTrackHelper*)::'lambda'(void*)::__invoke(void*) + 4)
+  stop = 0x0000007d143696c0 (libmp4extractor.so`android::wrap(android::MediaTrackHelper*)::'lambda0'(void*)::__invoke(void*))
+  getFormat = 0x0000007d143696c8 (libmp4extractor.so`android::wrap(android::MediaExtractorPluginHelper*)::'lambda'(void*, AMediaFormat*)::__invoke(void*, AMediaFormat*) + 4)
+  read = 0x0000007d143696cc (libmp4extractor.so`android::wrap(android::MediaTrackHelper*)::'lambda'(void*, AMediaFormat*)::__invoke(void*, AMediaFormat*) + 4)
+  supportsNonBlockingRead = 0x0000007d143696d0 (libmp4extractor.so`__typeid__ZTSFbPvE_global_addr)
+}
+```
+得到的 data 的类型为: MPEG4Source, 因此:
+```
+p *((android::MPEG4Source *)0x0000007de8638ed0)
+(android::MPEG4Source) $67 = {
+  android::MediaTrackHelper = {
+    mBufferGroup = nullptr
+  }
+  mLock = {
+    mMutex = {
+      __private = ([0] = 0, [1] = 0, [2] = 0, [3] = 0, [4] = 0, [5] = 0, [6] = 0, [7] = 0, [8] = 0, [9] = 0)
+    }
+  }
+  mFormat = 0x0000007d586489a0
+  mDataSource = 0x0000007d2863b850
+  mTimescale = 90000
+  ...
+}
+```
+此时关注 mFormat 我们打印其内容:
+```
+p *(AMediaFormat *)0x0000007d586489a0
+(AMediaFormat) $87 = {
+  mFormat = {
+    m_ptr = 0x0000007d686398b0
+  }
+  mDebug = (mString = "")
+}
+```
+此处 mFormat 的类型为 android::AMessage, 因此:
+```
+p *(android::AMessage *)0x0000007d686398b0
+(android::AMessage) $89 = {
+  android::RefBase = {
+    mRefs = 0x0000007d3863c230
+  }
+  mWhat = 0
+  mTarget = 0
+  mHandler = {
+    m_ptr = nullptr
+    m_refs = nullptr
+  }
+  mLooper = {
+    m_ptr = nullptr
+    m_refs = nullptr
+  }
+  mItems = size=16 {
+    [0] = {
+      u = {
+        int32Value = 946061584
+        int64Value = 537816973584
+        sizeValue = 537816973584
+        floatValue = 0.0000543008209
+        doubleValue = 2.6571689039816359E-312
+        ptrValue = 0x0000007d3863c110
+        refValue = 0x0000007d3863c110
+        stringValue = 0x0000007d3863c110
+        rectValue = (mLeft = 946061584, mTop = 125, mRight = 0, mBottom = 0)
+      }
+      mName = 0x0000007d2863c270 "mime"
+      mNameLength = 4
+      mType = kTypeString
+    }
+    ...
+  }
+  ...
+}
+```
+AMessage 中, mItems 的第一个 Item 类型中的 stringValue 类型为: AString *, 因此可以求 "mime" 的值:
+```
+p *(android::AString *)0x0000007d3863c110
+(android::AString) $91 = (mData = "video/avc", mSize = 9, mAllocSize = 32)
+```
+可以清晰的看到, 有一个`Track`的`mime`类型为`"video/avc"`, 而另一个通过同样的方法可得知为: `"audio/mp4a-latm"`.
