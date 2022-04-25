@@ -51,6 +51,7 @@
   - [举证](#举证)
     - [`IMediaExtractor`](#imediaextractor)
     - [`IMediaSource`](#imediasource)
+    - [`C2GraphicBlock`](#c2graphicblock)
 
 # 应用层的播放器`MediaPlayer`
 ## 初始化
@@ -395,9 +396,27 @@ Android Q 以后的版本采用`CCodec`的方式加载解码插件, 此处仅仅
 `vpx_codec_decode()`完成解码工作, 前提是输入数据长度有效.
 
 #### 图形缓存的创建
-解码完成后解码器从`C2BlockPool`中通过`fetchGraphicBlock()`拉取一个`C2GraphicBlock`, 此时将触发`GraphicBuffer`的创建.
+
+解码完成后解码器从`C2BlockPool`中通过`fetchGraphicBlock()`拉取一个`C2GraphicBlock`, 此时将触发`GraphicBuffer`的创建. 这里`C2BlockPool`的实现是`BlockingBlockPool`, 通过`mImpl`引用`C2BufferQueueBlockPool::Impl`, 从这个实现开始:
+* 通过`IBufferQueueProducer`(实现为`BpHwBufferQueueProduce`)获取一个`HardwareBuffer`
+* 使用`h2b()`将`HardwareBuffer`通过`AHardwareBuffer_createFromHandle()`将`HardwareBuffer`转化为`AHardwareBuffer`
+* 最后通过`GraphicBuffer::fromAHardwareBuffer()`通过`AHardwareBuffer`创建`GraphicBuffer`
+* 此时创建`GraphicBuffer`是通过`native_handle_t`创建的, 那么将涉及`GraphicBuffer`的导入, `GraphicBuffer`通过`GraphicBufferMapper::importBuffer()`(后端实现是`Gralloc2Mapper`)完成导入.
+
+`GraphicBuffer`创建后被`C2Handle`所引用, `C2Handle`通过`WrapNativeCodec2GrallocHandle()`创建, 在为视频时, 实现为`C2HandleGralloc`, 通过`C2Handle`进一步分配了`C2GraphicAllocation`, 此时`C2BufferQueueBlockPoolData`被创建, 主要保存`GraphicBuffer`的信息.
+`_C2BlockFactory::CreateGraphicBlock()`则负责创建`C2GraphicBlock`, 上文的创建的`C2GraphicAllocation`(子类`C2AllocationGralloc`)和`C2BufferQueueBlockPoolData`(类型为`_C2BlockPoolData`)保存到`C2GraphicBlock`的父类`C2Block2D`的`mImpl`(类型为`C2Block2D::Impl`)中. 直到此时`GraphicBuffer`中的数据指针还没有被获取. **但是**, `C2Block2D`已经被创建. 
+
+那么解码器是如何通过`C2Block2D`获取到`GraphicBuffer`中的数据指针呢?
+* 首先`block->map().get()`通过`C2Block2D::Impl`, 也就是`_C2MappingBlock2DImpl`创建一个`Mapped`, 这个`Mapped`通过`C2GraphicAllocation`执行映射, 这个过程中`mHidlHandle.getNativeHandle()`将获得`native_handle_t`(其中`mHidlHandle`的类型是上文创建的`C2Handle`). 只要有`native_handle_t`就可以通过`GraphicBufferMapper::lockYCbCr()`去锁定`HardwareBuffer`中的数据, 将获取`PixelFormat4::YV12`格式的`GraphicBuffer`中各数据分量的布局地址信息, 这些地址信息会保存到`mOffsetData`, 后面会通过`_C2MappingBlock2DImpl::Mapped::data()`获取. 最后`C2GraphicBlock::map()`返回的是`C2Acquirable<C2GraphicView>`, 而`C2Acquirable<>`返回的是`C2GraphicView`. 
+* 然后`wView.data()`获取数据指针, 该过程通过`C2GraphicView`:
+  * `mImpl`: `_C2MappedBlock2DImpl`
+  * `_C2MappedBlock2DImpl::mapping()`: `Mapped`
+  * `Mapped::data()`: 为上文保存的各数据分量的地址.
+
+最后通过`copyOutputBufferToYuvPlanarFrame()`完成解码后数据到`GraphicBuffer`的拷贝. `createGraphicBuffer()`负责从填充过的包含`GraphicBuffer`的`C2GraphicBlock`包装为`C2Buffer`, 然后通过`fillWork`代码块将`C2Buffer`打包到`C2Work`中, 等待返回. (举证请参见附件 [`C2GraphicBlock`](#c2graphicblock))
 
 #### 视频解码返回图形缓存
+
 
 #### 图形缓存的接收
 
@@ -692,3 +711,77 @@ p *(android::AString *)0x0000007d3863c110
 (android::AString) $91 = (mData = "video/avc", mSize = 9, mAllocSize = 32)
 ```
 可以清晰的看到, 有一个`Track`的`mime`类型为`"video/avc"`, 而另一个通过同样的方法可得知为: `"audio/mp4a-latm"`.
+
+### `C2GraphicBlock`
+断点:`C2BufferQueueBlockPool::Impl::fetchFromIgbp_l()`(`C2BqBuffer.cpp:463:13`):
+```
+(lldb) p *block
+(std::shared_ptr<C2GraphicBlock>) $36 = std::__1::shared_ptr<C2GraphicBlock>::element_type @ 0x0000006fa2dbbcd0 strong=1 weak=1 {
+  __ptr_ = 0x0000006fa2dbbcd0
+}
+
+(lldb) p *(C2GraphicBlock *)0x0000006fa2dbbcd0 
+(C2GraphicBlock) $38 = {
+  C2Block2D = {
+    _C2PlanarSectionAspect = {
+      _C2PlanarCapacityAspect = (_mWidth = 320, _mHeight = 240)
+      mCrop = (width = 320, height = 240, left = 0, top = 0)
+    }
+    mImpl = std::__1::shared_ptr<C2Block2D::Impl>::element_type @ 0x0000006ff2dbc5e8 strong=1 weak=2 {
+      __ptr_ = 0x0000006ff2dbc5e8
+    }
+  }
+}
+
+(lldb) p *(C2Block2D::Impl *)0x0000006ff2dbc5e8
+(C2Block2D::Impl) $39 = {
+  _C2MappingBlock2DImpl = {
+    _C2Block2DImpl = {
+      _C2PlanarSectionAspect = {
+        _C2PlanarCapacityAspect = (_mWidth = 320, _mHeight = 240)
+        mCrop = (width = 320, height = 240, left = 0, top = 0)
+      }
+      mAllocation = std::__1::shared_ptr<C2GraphicAllocation>::element_type @ 0x0000006ff2db7cf0 strong=2 weak=1 {
+        __ptr_ = 0x0000006ff2db7cf0
+      }
+      mPoolData = std::__1::shared_ptr<_C2BlockPoolData>::element_type @ 0x0000006ff2dbabc8 strong=2 weak=2 {
+        __ptr_ = 0x0000006ff2dbabc8
+      }
+    }
+... ...
+
+// C2GraphicAllocation 的类型实际上是 C2AllocationGralloc
+(lldb) p *(android::C2AllocationGralloc *)0x0000006ff2db7cf0
+(android::C2AllocationGralloc) $40 = {
+  C2GraphicAllocation = {
+    _C2PlanarCapacityAspect = (_mWidth = 320, _mHeight = 240)
+  }
+  mWidth = 320
+  mHeight = 240
+  mFormat = 842094169
+  mLayerCount = 1
+  mGrallocUsage = 2355
+  mStride = 320
+  mHidlHandle = {
+    mHandle = {
+       = {
+        mPointer = 0x0000006fe2db5b40
+        _pad = 480547396416
+      }
+    }
+...
+
+// mHidlHandle.mHandle 的类型是 native_handle_t 
+(lldb) p *((android::C2AllocationGralloc *)0x0000006ff2db7cf0)->mHidlHandle.mHandle.mPointer
+(const native_handle) $64 = (version = 12, numFds = 2, numInts = 22, data = int [] @ 0x0000000008a61a0c)
+```
+
+这里多扯一句, `native_handl`(也就是`natvie_handle_t`)其实是高通的私有的`private_handle_t`, 该数据的幻数是`'msmg'`, 其也保存了宽高, 其定义在`hardware/qcom/sdm845/display/gralloc/gr_priv_handle.h`文件中, 名称为:`private_handle_t`, 其数据:
+```
+(lldb) x -c64 0x0000006fe2db5b40
+0x6fe2db5b40: 0c 00 00 00 02 00 00 00 16 00 00 00 3e 00 00 00  ............>...
+0x6fe2db5b50: 3f 00 00 00 6d 73 6d 67 08 02 10 14 40 01 00 00  ?...msmg....@...
+0x6fe2db5b60: f0 00 00 00 40 01 00 00 f0 00 00 00 59 56 31 32  ....@.......YV12
+0x6fe2db5b70: 01 00 00 00 01 00 00 00 84 05 00 00 00 00 00 00  ................
+```
+可自行对比.
