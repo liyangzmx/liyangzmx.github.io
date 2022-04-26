@@ -16,22 +16,23 @@
   - [播放器显示的设置](#播放器显示的设置)
   - [播放的开始](#播放的开始)
     - [`MediaCodec`解码器的创建及初始化](#mediacodec解码器的创建及初始化)
-      - [`CCodec`的创建](#ccodec的创建)
-      - [`CCodec`事件监听的注册](#ccodec事件监听的注册)
-      - [`CCodec`的实例化](#ccodec的实例化)
-      - [`CCodec`视频解码插件加载](#ccodec视频解码插件加载)
-      - [`CCodec`视频解码组件`Component`的查找](#ccodec视频解码组件component的查找)
+      - [`Codec 2`解码框架解码器`CCodec`](#codec-2解码框架解码器ccodec)
+        - [`CCodec`的创建](#ccodec的创建)
+        - [`CCodec`事件监听的注册](#ccodec事件监听的注册)
+        - [`CCodec`的实例化](#ccodec的实例化)
+        - [`CCodec`视频解码插件加载](#ccodec视频解码插件加载)
+        - [`CCodec`视频解码组件`Component`的查找](#ccodec视频解码组件component的查找)
     - [`MediaCodec`的配置](#mediacodec的配置)
     - [`MediaCodec`的启动](#mediacodec的启动)
-  - [解码器](#解码器)
-    - [编码数据缓存准备](#编码数据缓存准备)
-    - [编码数据的拷贝](#编码数据的拷贝)
-    - [编码数据的发送](#编码数据的发送)
-    - [编码数据的导入](#编码数据的导入)
-    - [视频解码](#视频解码)
-      - [图形缓存的创建](#图形缓存的创建)
-      - [视频解码返回图形缓存](#视频解码返回图形缓存)
-      - [图形缓存的接收](#图形缓存的接收)
+      - [`CCodec`的启动](#ccodec的启动)
+      - [`CCodec`解码](#ccodec解码)
+        - [编码数据缓存准备`C2LinearBlock`](#编码数据缓存准备c2linearblock)
+        - [解码工作描述`C2Work`以及编码数据描述`C2Buffer`的创建](#解码工作描述c2work以及编码数据描述c2buffer的创建)
+        - [`media.swcodec`对解码工作的接收以及解码数据的获取](#mediaswcodec对解码工作的接收以及解码数据的获取)
+        - [VPx视频解码](#vpx视频解码)
+        - [视频解码图形缓存描述`C2GraphicBlock`的创建](#视频解码图形缓存描述c2graphicblock的创建)
+        - [视频解码返回图形缓存](#视频解码返回图形缓存)
+        - [图形缓存的接收](#图形缓存的接收)
     - [音频解码](#音频解码)
       - [音频解码返回数据](#音频解码返回数据)
       - [音频数据的接收](#音频数据的接收)
@@ -286,29 +287,30 @@ MediaCodec`创建完成后通过`init()`调用上文的`mGetCodecBase`也就是`
 * `ACodec`
 * `MediaFilter`
 
-#### `CCodec`的创建
+#### `Codec 2`解码框架解码器`CCodec`
+##### `CCodec`的创建
 Android Q 以后的版本采用`CCodec`的方式加载解码插件, 此处仅仅是创建了`Codecbase`(这里是`CCodec`), 确定了解码器的名字, 但还没有初始化`CCodec`. 
 
-#### `CCodec`事件监听的注册
+##### `CCodec`事件监听的注册
 而`MediaCodec`在初始化完`CCodec`(`CodecBase`)后:
 * 构造了`CodecCallback`, 其实现了`CodecBase::CodecCallback`接口, 而`CCodec::setCallback()`是在父类`CodecBase`实现的
 * 构造了`BufferCallback`, 其实现了`CodecBase::BufferCallback`接口, 用于监听来自`CCodecBufferChannel`的消息. 而`mBufferChannel`的类型是`CCodecBufferChannel`, 其`setCallback()`是在父类`BufferChannelBase`实现的, 最后`MediaCodec::BufferCallback`作为`CodecBase::BufferCallback`设置在了`CCodecBufferChannel`的`mCallback`方法
 
-#### `CCodec`的实例化
+##### `CCodec`的实例化
 初始化过程仍在`MediaCodec::init()`中继续, 该函数后续发出了`kWhatInit`消息, 并传递了解码器的名字给异步线程,`kWhatInit`由`CodecBase::initiateAllocateComponent()`响应, 其对解码器进行实例化. 在`CCodec`创建时`CCodecBufferChannel`也被创建, 其继承自`BufferChannelBase`, 并设置在`CCodec`的`mChannel`中
 
 `CCodec`再次发出异步消息`kWhatAllocate`, 由`CCodec::allocate()`响应. CCodec通过`Codec2Client::CreateFromService()`创建了`Codec2Client`, `Codec2Client`持有`IComponentStore`接口, 并通过其访问`media.swcodec`的`ComponnetStore`.
 
 `CCodec`后续通过`Codec2Client::CreateComponentByName()`创建了`Codec2Client::Component`, 大体的过程是: `Codec2Client::CreateComponentByName()` -> `Codec2Client::createComponent()` --[`Binder`]--> [`IComponentStore::createComponent_1_2()` => `ComponentStore::createComponent_1_2()`]. 该过程涉及解码器插件的加载和解码器组建的查找, 先了解接加载过程.
 
-#### `CCodec`视频解码插件加载
+##### `CCodec`视频解码插件加载
 `C2SoftVpxDec`的加载过程:
 * `libcodec2_soft_vp9dec.so`对应的`ComponentModule`创建
   * `media.swcodec`启动时, 通过`RegisterCodecServices`注册`ComponentStore`服务, 此时会创建`C2PlatformComponentStore`, 其集成关系:`C2PlatformComponentStore ` -> `C2ComponentStore`
   * `C2PlatformComponentStore`将创建`mLibPath`为`libcodec2_soft_vp9dec.so`的`ComponentLoader`类型
   * 最后通过`C2ComponentStore`创建实现了`IComponentStore`的`V1_2::utils::ComponentStore`实例, 返回给了`Codec2Client`
 
-#### `CCodec`视频解码组件`Component`的查找
+##### `CCodec`视频解码组件`Component`的查找
   * `Codec2Client`在通过`createComponent()`方法创建组件时, `ComponentStore`首先找到匹配的`ComponentLoader`, 在Loader的初始化过程中欧给你, 将创建`ComponentModule`对象  
   * `ComponentLoader`对象从对应的`libcodec2_soft_vp9dec.so`中查找`CreateCodec2Factory`符号
   * 调用`CreateCodec2Factory`符号将返回`C2ComponentFactory`类型, 其实现为`C2SoftVpxFactory`
@@ -325,18 +327,21 @@ Android Q 以后的版本采用`CCodec`的方式加载解码插件, 此处仅仅
 `doConfig`是个`lambada`, 作为`std::fucntion`传递给`tryAndReportOnError()`, 该部分代码做了大量配置工作, 完成配置后, `mCallback->onComponentConfigured()`回调到上文设置的`MediaCodec::CodecCallback::onComponentConfigured()`
 
 ### `MediaCodec`的启动
-`Decoder::onConfigure()`最后负责启动`MediaCodec`, `MediaCodec`通过`kWhatStart`通知异步线程执行配置, 该消息由`CCodec::initiateStart()`负责响应, 该方法继续发出`kWhatStart`消息给`CCodec`的异步线程, 并由`CCodec::start()`响应. 而`CCodec::start()`也调用了`CCodecBufferChannel::start()`, 上文说到`CCodecBufferChannel`保存了`Codec2Client::Component`, 此处`Conponent::setOutputSurface()`被调用. `mOutputBufferQueue`的类型是`OutputBufferQueue`, 因此不管那个分支, 都调用了`OutputBufferQueue::configure()`, 因此`IGraphicBufferProducer`被设置到了`OutputBufferQueue`的`mIgbp`, 在后文`OutputBufferQueue::outputBuffer()`时会用到. 
+`Decoder::onConfigure()`最后负责启动`MediaCodec`, `MediaCodec`通过`kWhatStart`通知异步线程执行配置, 该消息由`CCodec::initiateStart()`负责响应. CCodec
+
+#### `CCodec`的启动
+该方法继续发出`kWhatStart`消息给`CCodec`的异步线程, 并由`CCodec::start()`响应. 而`CCodec::start()`也调用了`CCodecBufferChannel::start()`, 上文说到`CCodecBufferChannel`保存了`Codec2Client::Component`, 此处`Conponent::setOutputSurface()`被调用. `mOutputBufferQueue`的类型是`OutputBufferQueue`, 因此不管那个分支, 都调用了`OutputBufferQueue::configure()`, 因此`IGraphicBufferProducer`被设置到了`OutputBufferQueue`的`mIgbp`, 在后文`OutputBufferQueue::outputBuffer()`时会用到. 
 
 `postPendingRepliesAndDeferredMessages("kWhatStartCompleted")`完成后, `MediaCodec::start()`返回
 
+#### `CCodec`解码
 `CCodec`在启动`CCodecBufferChannel`后立刻调用其`requestInitialInputBuffers()`开始从数据源读取数据. 该方法从当前类的`input->buffers`中请求缓冲, 其类型为`LinearInputBuffers`, 继承关系: `LinearInputBuffers` -> `InputBuffers` -> `CCodecBuffers`, `requestNewBuffer()`正是由`InputBuffers`提供. 在请求时, 如果缓冲区没有申请过, 则通过`LinearInputBuffers::createNewBuffer()` -> `LinearInputBuffers::Alloc()`进行申请, 申请的类型为`Codec2Buffer`(父类`MediaCodecBuffer`), 申请完成后保存到`mImpl`(也就是`BuffersArrayImpl`), 最后作为`MediaCodecBuffer`返回. 请求成功之后立马通知上层, 输入缓冲可用, 该时间是通过`BufferCallback::onInputBufferAvailable()`, 上文提到`BufferCallback`是`MediaCodec`用来监听`BufferChannelBase`(也就是`CCodecBufferChannel`)消息的, 所以, `BufferCallback`会通过`kWhatCodecNotify`的`AMessaage`通知通知`MediaCodec`, 具体通知的消息为`kWhatFillThisBuffer`.
 
 `kWhatFillThisBuffer`消息由`MediaCodec::onInputBufferAvailable()`响应, `MediaBuffer`继续通过`mCallback`(类型为`AMessage`)通知上层的`NuPlayer::Decoder`, 具体的消息类型为`MediaCodec::CB_INPUT_AVAILABLE`, 播放器在得知底层输入缓冲可用时, 试图提取一段输入数据.
 
 `NuPlayer::Decoder`通过基类`NuPlayer::DecoderBase`的`onRequestInputBuffers()`去拉取数据, 这个过程将通过`GenericSource`的`dequeueAccessUnit()`方法完成. `GenericSource::dequeueAccessUnit()`上文已经讲过. 当该函数无法从缓冲区读取到数据时会通过`postReadBuffer()`从拉流, 该函数调用的`GenericSource::readBuffer()`上文已经讲过, 此处略去.
 
-## 解码器
-### 编码数据缓存准备
+##### 编码数据缓存准备`C2LinearBlock`
 对于编码数据, 其用线性数据块`C2LinearBlock`(实现自`C2Block1D`), 底层的实现是`ION`, 其引用关系:  
 * `C2LinearBlock` => `C2Block1D`  
   * `mImpl`: `_C2Block1DImpl` => `C2Block1D::Impl`
@@ -353,9 +358,7 @@ Android Q 以后的版本采用`CCodec`的方式加载解码插件, 此处仅仅
 
 `C2AllocatorIon::newLinearAllocation()` 创建了上文的`C2AllocationIon`极其实现`C2AllocationIon::Impl`, 创建完成后进行的分配.
 
-### 编码数据的拷贝
-
-### 编码数据的发送
+##### 解码工作描述`C2Work`以及编码数据描述`C2Buffer`的创建
 通过`objcpy()`完成`C2Work`到`Work`的转换, 后者支持序列化, 便于通过Binder发送:  
 * `C2Work[]` -> `WorkBundle`
   * `C2Work` -> `Work`  
@@ -369,7 +372,7 @@ Android Q 以后的版本采用`CCodec`的方式加载解码插件, 此处仅仅
         * `C2Buffer` -> `Buffer`
           * `C2Block[1|2]D` -> `Block`
 
-### 编码数据的导入
+##### `media.swcodec`对解码工作的接收以及解码数据的获取
 `mediaserver`通过`IComponent::queue()`发送`C2Work`到`media.swcodec`, 在服务端, `objcpy`负责`WorkBundle`中的`Work`到`C2Work`的转换, 大概的层级关系:    
 * `WorkBundle` -> `C2Work[]`
   *`Work` -> `C2Work`  
@@ -392,10 +395,10 @@ Android Q 以后的版本采用`CCodec`的方式加载解码插件, 此处仅仅
 
 接下来`uint8_t *bitstream = const_cast<uint8_t *>(rView.data() + inOffset`, 是通过`C2ReadView::data()`获取数据指针, 正式从上面的`C2ReadView::Impl.mData`获取的.
 
-### 视频解码
+##### VPx视频解码
 `vpx_codec_decode()`完成解码工作, 前提是输入数据长度有效.
 
-#### 图形缓存的创建
+##### 视频解码图形缓存描述`C2GraphicBlock`的创建
 
 解码完成后解码器从`C2BlockPool`中通过`fetchGraphicBlock()`拉取一个`C2GraphicBlock`, 此时将触发`GraphicBuffer`的创建. 这里`C2BlockPool`的实现是`BlockingBlockPool`, 通过`mImpl`引用`C2BufferQueueBlockPool::Impl`, 从这个实现开始:
 * 通过`IBufferQueueProducer`(实现为`BpHwBufferQueueProduce`)获取一个`HardwareBuffer`
@@ -410,15 +413,15 @@ Android Q 以后的版本采用`CCodec`的方式加载解码插件, 此处仅仅
 * 首先`block->map().get()`通过`C2Block2D::Impl`, 也就是`_C2MappingBlock2DImpl`创建一个`Mapped`, 这个`Mapped`通过`C2GraphicAllocation`执行映射, 这个过程中`mHidlHandle.getNativeHandle()`将获得`native_handle_t`(其中`mHidlHandle`的类型是上文创建的`C2Handle`). 只要有`native_handle_t`就可以通过`GraphicBufferMapper::lockYCbCr()`去锁定`HardwareBuffer`中的数据, 将获取`PixelFormat4::YV12`格式的`GraphicBuffer`中各数据分量的布局地址信息, 这些地址信息会保存到`mOffsetData`, 后面会通过`_C2MappingBlock2DImpl::Mapped::data()`获取. 最后`C2GraphicBlock::map()`返回的是`C2Acquirable<C2GraphicView>`, 而`C2Acquirable<>`返回的是`C2GraphicView`. 
 * 然后`wView.data()`获取数据指针, 该过程通过`C2GraphicView`:
   * `mImpl`: `_C2MappedBlock2DImpl`
-  * `_C2MappedBlock2DImpl::mapping()`: `Mapped`
-  * `Mapped::data()`: 为上文保存的各数据分量的地址.
+    * `_C2MappedBlock2DImpl::mapping()`: `Mapped`
+      * `Mapped::data()`: 为上文保存的各数据分量的地址.
 
 最后通过`copyOutputBufferToYuvPlanarFrame()`完成解码后数据到`GraphicBuffer`的拷贝. `createGraphicBuffer()`负责从填充过的包含`GraphicBuffer`的`C2GraphicBlock`包装为`C2Buffer`, 然后通过`fillWork`代码块将`C2Buffer`打包到`C2Work`中, 等待返回. (举证请参见附件 [`C2GraphicBlock`](#c2graphicblock))
 
-#### 视频解码返回图形缓存
+##### 视频解码返回图形缓存
 
 
-#### 图形缓存的接收
+##### 图形缓存的接收
 
 ### 音频解码
 
