@@ -33,12 +33,11 @@
         - [视频解码图形缓存描述`C2GraphicBlock`的创建](#视频解码图形缓存描述c2graphicblock的创建)
         - [视频解码返回图形缓存](#视频解码返回图形缓存)
         - [图形缓存的接收](#图形缓存的接收)
-    - [音频解码](#音频解码)
-      - [音频解码返回数据](#音频解码返回数据)
-      - [音频数据的接收](#音频数据的接收)
+    - [音频解码与视频解码的差异](#音频解码与视频解码的差异)
   - [音画同步](#音画同步)
   - [视频渲染](#视频渲染)
-    - [本地缓冲队列](#本地缓冲队列)
+    - [`mediaserver`中的队列](#mediaserver中的队列)
+    - [应用中的队列`BLASTBufferQueue`](#应用中的队列blastbufferqueue)
     - [SurfaceFlinger合成](#surfaceflinger合成)
     - [硬件合成器送显](#硬件合成器送显)
   - [音频渲染](#音频渲染)
@@ -257,9 +256,15 @@ Android 中, 原则上都是通过`MediaExtractorService`处理, `MediaExtractor
 那么这些从`IMediaSource`中读取到的数据合适被读取呢? 它们将在`NuPlayer::Decoder::fetchInputData()`是, `NuPlayer::Decoder`通过`GenericSource::dequeueAccessUnit()`被提取.
 
 ## 播放器显示的设置
+系统相册在播放视频时会创建一个`SurfaceView`, 该类在构造是通过其`Java`层: `updateSurface()` -> `createBlastSurfaceControls()`构造了`BLASTBufferQueue`类, 此时会触发`Native`层构造`BLASTBufferQueue`, 该过程将创建一对消费这和生产者:
+* `IGraphicBufferProducer` => `BufferQueueProducer` => `BBQBufferQueueProducer`
+* `IGraphicBufferConsumer` => `BufferQueueConsumer` => `BufferQueueConsumer`
+
+然后在上层`updateSurface()`过程, 通过`copySurfac()`方法构造`Surface`(`Java`层), 构造的方式是:`Surface.copyFrom()`, 这将通过底层的`BLASTBufferQueue::getSurface()`获取一个`Native`的`Surface`, 而`BLASTBufferQueue`的生产者将被记录在这个`Surfac`中.
+
 `MediaPlayer.setDisplay()` -> `MediaPlayer._setVideoSurface()` -> `android_media_MediaPlayer_setVideoSurface()` -> `MediaPlayer::setVideoSurfaceTexture()`.
 
-通过`android_view_Surface_getSurface()`将上层的`Surface`(Java)转换为底层的`Surface`(Native), 然后将该`Surface`(Native)指针记录在`MediaPlayer.mNativeSurfaceTexture`(Java)中, 最后通过`mp->setVideoSurfaceTexture()`也就是`MediaPlayer::setVideoSurfaceTexture()`设置从`Surface`(Native)调用`getIGraphicBufferProducer()`获得的`IGraphicBufferProducer`给底层的`MediaPlayer`(Native).
+通过`android_view_Surface_getSurface()`将上层的`Surface`(Java)转换为底层的`Surface`(Native), 然后将该`Surface`(Native)指针记录在`MediaPlayer.mNativeSurfaceTexture`(Java)中, 最后通过`mp->setVideoSurfaceTexture()`也就是`MediaPlayer::setVideoSurfaceTexture()`设置从`Surface`(Native)调用`getIGraphicBufferProducer()`获得的`IGraphicBufferProducer`, 这个`IGraphicBufferProducer`正是上文`BLASTBufferQueue`中的, 该接口最终配置给底层的`MediaPlayer`(Native).
 
 `mPlayer->setVideoSurfaceTexture()`通过Binder调用到`MediaPlayerService::Client::setVideoSurfaceTexture()`, 通过上层传递的`bufferProducer`创建了新的`Surface`, 又通过`disconnectNativeWindow_l()`断开了`bufferProducer`与应用持有的`Surface`(Native)的联系, 然后将新创建的`Surface`保存到`Client::mConnectedWindow`, 这意味着, `mediaserver`直接负责生产`GraphicBuffer`给原本属于应用持有的`Surface`. 进一步, 将`Surface`配置给`NuPlayerDriver`, `NuPlayerDriver`通过`kWhatSetVideoSurface`将`Surface`发个给异步线程.`NuPlayer`保存上层的`Surface`即`mediaserver`使用应用传递的`IGraphicBufferProducer`所创建的`Surface`到`mSurface`, 并调用`NuPlayerDriver::notifySetSurfaceComplete()`告知`NuPlayerDriver::setVideoSurfaceTexture()`可以返回.
 
@@ -350,11 +355,14 @@ Android Q 以后的版本采用`CCodec`的方式加载解码插件, 此处仅仅
 
 `C2Block1D`是从`C2BlockPool`分配的, 其引用关系:
 * `C2BlockPool::mBase`: `C2PooledBlockPool::Impl`
-  * `mBufferPoolManager.mImpl`: `ClientManager::Impl`
-    * `mClients[x].mImpl`: `BufferPoolClient::Impl`
-      * `mLocalConnection`: `Connectoin`
-        * `mAccessor.mImpl`: `Accessor::Impl`
-          * `mAllocator`: `_C2BufferPoolAllocator` => `BufferPoolAllocator`
+* `mBufferPoolManager.mImpl`: `ClientManager::Impl`
+* `mClients[x].mImpl`: `BufferPoolClient::Impl`
+* `mLocalConnection`: `Connectoin`
+* `mAccessor.mImpl`: `Accessor::Impl`
+* `mAllocator`: `_C2BufferPoolAllocator` => `BufferPoolAllocator`
+* `mAllocator`: `C2Allocator` => `C2AllocatorIon`
+* `mImpl`: `C2AllocationIon::Impl`
+* `ion_alloc()`
 
 `C2AllocatorIon::newLinearAllocation()` 创建了上文的`C2AllocationIon`极其实现`C2AllocationIon::Impl`, 创建完成后进行的分配.
 
@@ -373,7 +381,7 @@ Android Q 以后的版本采用`CCodec`的方式加载解码插件, 此处仅仅
           * `C2Block[1|2]D` -> `Block`
 
 ##### `media.swcodec`对解码工作的接收以及解码数据的获取
-`mediaserver`通过`IComponent::queue()`发送`C2Work`到`media.swcodec`, 在服务端, `objcpy`负责`WorkBundle`中的`Work`到`C2Work`的转换, 大概的层级关系:    
+`mediaserver`通过`IComponent::queue()`发送`C2Work`到`media.swcodec`, 在服务端, `objcpy()`负责`WorkBundle`中的`Work`到`C2Work`的转换, 大概的层级关系:    
 * `WorkBundle` -> `C2Work[]`
   *`Work` -> `C2Work`  
     * `FrameData` -> `C2FrameData`
@@ -401,10 +409,12 @@ Android Q 以后的版本采用`CCodec`的方式加载解码插件, 此处仅仅
 ##### 视频解码图形缓存描述`C2GraphicBlock`的创建
 
 解码完成后解码器从`C2BlockPool`中通过`fetchGraphicBlock()`拉取一个`C2GraphicBlock`, 此时将触发`GraphicBuffer`的创建. 这里`C2BlockPool`的实现是`BlockingBlockPool`, 通过`mImpl`引用`C2BufferQueueBlockPool::Impl`, 从这个实现开始:
-* 通过`IBufferQueueProducer`(实现为`BpHwBufferQueueProduce`)获取一个`HardwareBuffer`
+* 通过`android::hardware::graphics::bufferqueue::V2_0::IBufferQueueProducer`(实现为`BpHwBufferQueueProducer`)获取一个`HardwareBuffer`
 * 使用`h2b()`将`HardwareBuffer`通过`AHardwareBuffer_createFromHandle()`将`HardwareBuffer`转化为`AHardwareBuffer`
 * 最后通过`GraphicBuffer::fromAHardwareBuffer()`通过`AHardwareBuffer`创建`GraphicBuffer`
 * 此时创建`GraphicBuffer`是通过`native_handle_t`创建的, 那么将涉及`GraphicBuffer`的导入, `GraphicBuffer`通过`GraphicBufferMapper::importBuffer()`(后端实现是`Gralloc2Mapper`)完成导入.
+
+这里的`android::hardware::graphics::bufferqueue::V2_0::IBufferQueueProducer`实现是`BpHwGraphicBufferProducer`, 该方法的对端为`mediaserver`进程中的`BnHwGraphicBufferProducer`, 最后处理消息的类为`B2HGraphicBufferProducer`, 而该方法中的`mBase`类型为`android::IGraphicBufferProducer`, 其实现为`android::BpGraphicBufferProducer`. 该方法将跨进程从应用系统相册一侧的`BnGraphicBufferProducer` => `BufferQueueProducer` => `BBQBufferQueueProducer`提取一个`GraphicBuffer`, 该对象将通过`b2h()`转换为一个`IGraphicBufferProducer::QueueBufferOutput`, 该类继承自`Flattenable<QueueBufferOutput>`是可序列化的, 最终`b2h()`转化`GraphicBuffer`得到的`HardwareBuffer`将通过`Binder`传递给`media.swcodec`的解码器.
 
 `GraphicBuffer`创建后被`C2Handle`所引用, `C2Handle`通过`WrapNativeCodec2GrallocHandle()`创建, 在为视频时, 实现为`C2HandleGralloc`, 通过`C2Handle`进一步分配了`C2GraphicAllocation`, 此时`C2BufferQueueBlockPoolData`被创建, 主要保存`GraphicBuffer`的信息.
 `_C2BlockFactory::CreateGraphicBlock()`则负责创建`C2GraphicBlock`, 上文的创建的`C2GraphicAllocation`(子类`C2AllocationGralloc`)和`C2BufferQueueBlockPoolData`(类型为`_C2BlockPoolData`)保存到`C2GraphicBlock`的父类`C2Block2D`的`mImpl`(类型为`C2Block2D::Impl`)中. 直到此时`GraphicBuffer`中的数据指针还没有被获取. **但是**, `C2Block2D`已经被创建. 
@@ -413,27 +423,41 @@ Android Q 以后的版本采用`CCodec`的方式加载解码插件, 此处仅仅
 * 首先`block->map().get()`通过`C2Block2D::Impl`, 也就是`_C2MappingBlock2DImpl`创建一个`Mapped`, 这个`Mapped`通过`C2GraphicAllocation`执行映射, 这个过程中`mHidlHandle.getNativeHandle()`将获得`native_handle_t`(其中`mHidlHandle`的类型是上文创建的`C2Handle`). 只要有`native_handle_t`就可以通过`GraphicBufferMapper::lockYCbCr()`去锁定`HardwareBuffer`中的数据, 将获取`PixelFormat4::YV12`格式的`GraphicBuffer`中各数据分量的布局地址信息, 这些地址信息会保存到`mOffsetData`, 后面会通过`_C2MappingBlock2DImpl::Mapped::data()`获取. 最后`C2GraphicBlock::map()`返回的是`C2Acquirable<C2GraphicView>`, 而`C2Acquirable<>`返回的是`C2GraphicView`. 
 * 然后`wView.data()`获取数据指针, 该过程通过`C2GraphicView`:
   * `mImpl`: `_C2MappedBlock2DImpl`
-    * `_C2MappedBlock2DImpl::mapping()`: `Mapped`
-      * `Mapped::data()`: 为上文保存的各数据分量的地址.
+  * `_C2MappedBlock2DImpl::mapping()`: `Mapped`
+  * `Mapped::data()`: 为上文保存的各数据分量的地址.
 
 最后通过`copyOutputBufferToYuvPlanarFrame()`完成解码后数据到`GraphicBuffer`的拷贝. `createGraphicBuffer()`负责从填充过的包含`GraphicBuffer`的`C2GraphicBlock`包装为`C2Buffer`, 然后通过`fillWork`代码块将`C2Buffer`打包到`C2Work`中, 等待返回. (举证请参见附件 [`C2GraphicBlock`](#c2graphicblock))
 
 ##### 视频解码返回图形缓存
-
+解码完成后, 解码器填充数据到`C2Buffer`, 该结构将被描述到`C2Work` -> `C2Worklet` -> `C2FrameData` -> `C2Buffer`(以及`C2BufferInfo`)中, 按照上文的描述通过`Binder`返回给`mediaserver`, 该过程将通过`objcpy()`完成从`C2Work[]`到`WorkBundle`的转换, 该过程略去.
 
 ##### 图形缓存的接收
+`mediaserver`通过`HidlListener`(实现了接口`IComponentListener`)来接收`WorkBundle`(也就是`Work[]`), 上文提到`objcpy()`可完成`Work`到`C2Work`的转换, 该过程同样包含了各个阶段相应对象的创建, 这里只提及几个地方:
+* `CreateGraphicBlock()`负责创建`C2GraphicBlock`, 并配置给了`dBaseBlocks[i]`(类型为`C2BaseBlock`)的`graphic`成员
+* `createGraphicBuffer()`负责从`C2ConstGraphicBlock`到`GraphicBuffer`的转化(导入), 并保存到`OutputBufferQueue`的`mBuffers[oldSlot]`. 而`C2ConstGraphicBlock`来子上文转化后的`C2FrameData::buffers(C2Buffer)::mImpl(C2Buffer::Impl)::mData(BufferDataBuddy)::mImpl(C2BufferData::Impl)::mGraphicBlocks(C2ConstGraphicBlock)`
+至此, `GraphicBuffer`已经完成从`IComponent`到`mediaserver`的传递.
 
-### 音频解码
+继续向上层通知, 通知路径有两条: 
+* `HidlListener::onWorkDone()` -> 
+  * `Codec2Client::Component::handleOnWorkDone()`, 这条路径未执行
+  * `Codec2Client::Listener` => `CCodec::ClientListener::onWorkDone()` -> 
+    * `CCodec` -> 
+      * `CCodecBufferChannel::onWorkDone()` ->
+        * `BufferCallback::onOutputBufferAvailable()`
 
-#### 音频解码返回数据
+`Buffercallback`上文提到过是`MediaCodec`用来监听`BufferChannelBase`(也就是`CCodecBufferChannel`)的, 所以这里`BufferCallback`通过`kWhatDrainThisBuffer`通知`MediaCodec`, `MediaCodec::onOutputBufferAvailable()`负责响应该消息, 该方法有进一步通过`CB_OUTPUT_AVAILABLE`消息, 通知到`NuPlayer::Decoder`, `NuPlayer::Decoder::handleAnOutputBuffer()`需要处理返回的视频帧, 解码器收到视频帧后推如渲染器, 也就是`NuPlayer::Renderer`, 这个过程会对`Renderer`发出`kWhatQueueBuffer`消息, `Renderer::onQueueBuffer()`负责响应该消息.
 
-#### 音频数据的接收
+### 音频解码与视频解码的差异
+音频解码输入的部分与视频解码并没有特别大的不同, 但输出的缓冲区类型也是`C2LinearBlock`, 且该输出缓存的来源和上文在解码数据的分配过程是一样的.
 
 ## 音画同步
 
 ## 视频渲染
+### `mediaserver`中的队列
+上文讲过, `GraphicBuffer`的跨进程经历了很多步骤, 它通过`BnHwGraphicBufferProducer::dequeueBuffer()`响应`media.swcodec`被转化为`HardwareBuffer`通过`Binder`获取, 通过`h2b()`转化为`GraphicBuffer`, 在数据填充完成后, 又通过`Binder`传回, 在`mediaserver`中通过`h2b`转化回`GraphicBuffer`, 并通过`Codec2Buffer`作为`MediaCodecBuffer`给到`MediaCodec`通知上层同步, 同步完成后它最终将由`MediaCodec`触发渲染, `NuPlayer::Renderer`确定可以渲染时, 将通过`kWhatReleaseOutputBuffer`消息告知`MediaCodec`渲染, 响应该消息的是:`MediaCodec::onReleaseOutputBuffer()`, 显然`MediaCodec`将调用`CCodecBufferChannel`执行`Codec2Buffer`的渲染, `Codec2Buffer`原本是保存在`CCodecBufferChannel`的`OutputBufferQueue`中, 在渲染时`GraphicBuffer`将通过`BpGraphicBufferProducer::queueBuffer()`被推出.
 
-### 本地缓冲队列
+### 应用中的队列`BLASTBufferQueue`
+上文说到`GraphicBuffer`通过`CCodecBufferChannel`的`OutputBufferQueue`由`IGraphicBufferProducer::queueBuffer()`被推送到系统相册里, `Surface`表面内嵌缓冲队列`BLASTBufferQueue`的生产者`BBQBufferQueueProducer`, 然后`BLASTBufferQueue`的消费者`BufferQueueConsumer`将通过父类接口`ConsumerBase::FrameAvailableListener()`通知对应的实现为:`BLASTBufferQueue::onFrameAvailable()`进行 进一步处理.
 
 ### SurfaceFlinger合成
 
