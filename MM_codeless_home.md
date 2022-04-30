@@ -1,3 +1,6 @@
+- [概念](#概念)
+- [话术](#话术)
+- [部分类的简要说明](#部分类的简要说明)
 - [应用层的播放器`MediaPlayer`](#应用层的播放器mediaplayer)
   - [初始化](#初始化)
   - [设置数据源](#设置数据源)
@@ -52,6 +55,116 @@
     - [`IMediaExtractor`](#imediaextractor)
     - [`IMediaSource`](#imediasource)
     - [`C2GraphicBlock`](#c2graphicblock)
+
+# 概念
+媒体文件解码流程:
+```
+媒体文件 --> |--> 视频流 -> 解码 --|          | --> 视频渲染
+            |                   |--> 同步 --|
+            └--> 音频流 -> 解码 --|          | --> 音频渲染
+```
+
+媒体文件在 Android 系统回放时设计的进程:
+```
+media.extractor -> mediaserver --| --> |media.swcodec
+                                 | <-- |
+                                 | --> surfaceflinger
+                                 | --> audioserver
+```
+至此已经掌握音视频所有的媒体文件播放流程了, 以下是正文
+
+# 话术
+* 引用: 指的是一个类通过一个指针指向另一个类
+* 实例: 一个接口的实现, 一个具体的对象
+* 实例化/例化: 创建一个类的具体对象
+
+# 部分类的简要说明
+* 运行于应用进程中:
+  * `MediaPlayer`: 播放器, 泛指`Java`层和`Native(C++)`层的播放器
+* 运行于`media.extractor`中
+  * `MediaExtractorService`: 实现`IMediaExtractorService`接口, 对外提供创建解封装的接口
+  * `DataSource`: 描述一个数据源头, 一个文件, 一个流等, 通常以`IDataSource`向外提供数据源的操作接口, 有以下几种实现:
+    * `DataURISource`
+    * **`FileSource`**: 数据来自文件
+    * `HTTPBase`: 数据来自`HTTP`链接
+    * `NuCachedSource2`
+  * `MediaExtractor`: 表示一个解封装器, 其通过`IMediaExtractor`的实现`RemoteMediaExtractor`对外提供服务,, 其子类实现为`MediaExtractorCUnwrapper`, 这是一个`CMediaExtractor`的`Wrapper`
+  * `MediaTrack`: 表示一个未解码的流, 通常以`IMediaSource`的实现`RemoteMediaSource`对外提供接口, 其子类实现为`MediaTrackCUnwrapper`, 这是一个`CMediaTrack`的`Wrapper`
+* 运行于`mediaserver`进程中
+  * `MediaPlayerService`: 播放器服务, 运行在`mediaserver`中, 以`IMediaPlayerService`接口提供服务
+  * `MediaPlayerService::Client`: 每个请求播放器服务的进程在`MediaPlayerService`中的描述
+  * `MediaPlayerFactory`: 用于创建播放器实例的工厂类, 它负责通过实现`IFactory`接口的工厂类创建播放器
+  * `NuPlayerFactory`: `NuPlayerDriver`的工厂类
+  * `NuPlayerDriver`: 播放器实例的驱动类, 负责部分同步操作到`NuPlayer`异步的转换
+  * `NuPlayer`: `MediaPlayerService`中实际的播放器实例, 负责完成播放相关的大部分异步操作
+  * `NuPlayer::Source`: 表示一个来源, 来源可能有很多种:
+    * **`NuPlayer::GenericSource`**: 来源是本地文件, 其引用:
+      * `TinyCacheSource`: 通过`TinyCacheSource`(`DataSource`)::`mSource` -> `CallbackDataSource`(`DataSource`)访问`DataSource`接口
+      * `IMediaSource`: 被成员`mVideoSource`和`mAudioSource`所引用
+    * `NuPlayer::StreamingSource`: 来源是一个流
+    * `NuPlayer::HTTPLiveSource`: 来源是一个`HTTP`直播流
+    * `NuPlayer::RTSPSource`: 来源是一个`RTSP`流
+    * `NuPlayer::RTPSource`: 来源是一个`RTP`流
+  * `NuPlayer::Decoder`: `NuPlayer`的解码器对象, 有`NuPlayer::Decoder`和`NuPlayer::DecoderPassThrough`两种实现, 本例只关注前者
+  * `MediaCodec`: 实际的解码器接口, 其负责将部分上层的同步操作转换为异步操作, 其引用一个`CodecBase`
+  * `CodecBase`: 表示一个解码器实例, 其引用一个`CodecBase`, 通常有`ACodec`, `CCodec`, `MediaFilter`几种实现:
+    * **`CCodec`**: 采用 Codec 2 框架的解码器实现
+    * `ACodec`: 采用 OMX 框架的解码器实现
+  * `CodecCallback`: 用于响应解码器的消息, 由``CodecBas`的实现
+  * `BufferCallback`: 用于响应缓冲区队列的消息, 由`BufferChannelBase`的实现回调该接口
+  * `BufferChannelBase`: 负责处理所有解码相关的输入输出缓冲区队列管理, 其有两个实现
+    * **`CCodecBufferChannel`**: Codec 2 框架实现缓冲区管理的实现
+    * `ACodecBufferChannel`: OMX 框架实现缓冲区管理的实现
+  * `MediaCodecBuffer`用于描述一个解码器使用的缓冲区, 其有几种扩展实现
+    * `Codec2Buffer` Codec 2 框架下的缓冲区描述, 该类有多种实现:
+      * `LocalLinearBuffer`: 本地线性缓存, 可写入
+      * **`DummyContainerBuffer`**: 空缓存, 在解码器没有配置`Surface`且应用试图获取数据时返回空缓存
+      * `LinearBlockBuffer`: 可写入的线性块缓存, 一般提供一个写入视图`C2WriteView`, 同样引用一个线性数据块`C2LinearBlock`(父类为`C2Block1D`)
+      * `ConstLinearBlockBuffer`: 只读的线性块缓存, 一般提供一个读取试图`C2ReadView`, 同样引用一个`C2Buffer`(子类为`LinearBuffer`)作为缓冲区的描述
+      * `GraphicBlockBuffer`: 图形数据块缓存描述, 一般提供一个视图`C2GraphicView`(用于写入), 同样引用一个`C2GraphicBlock`(父类为`C2Block2D`)
+      * `GraphicMetadataBuffer`: 图形元数据数据块, 
+      * `ConstGraphicBlockBuffer`: 只读图形数据块, 其提供一个视图`C2GraphicView`(用于读取), 同样引用一个`C2Buffer`或`ABuffer`
+      * `EncryptedLinearBlockBuffer`: 加密线性数据块
+    * `SharedMemoryBuffer`: 共享内存方式
+    * `SecureBuffer`: 安全缓冲区
+  * `Codec2Client`: 负责通过`HIDL`完成到 Codec 2 解码组件库所在进程`meida.codec`或`media.swcodec`的各种请求
+  * `Codec2Client::Component`: 负责通过`HIDL`完成到 Codec 2 解码组件库所在进程`meida.codec`或`media.swcodec`的各种请求
+  * `Codec2Client::Interface`: 为组建接口, 其引用一个远程的`IComponentInterface`接口, 它集成自`Codec2Client::Configurable`, 意为可配置
+  * `Codec2Client::Listener`: 负责监听来自组件`HIDL`接口的消息, 其有一个实现`CCodec::ClientListener`, 负责通知`CCodec`
+  * `Component::HidlListener`: 负责监听来自组件的消息, 其实现了`IComponentListener`接口, 有消息产生后通过`Codec2Client::Listener`通知`CCodec`
+  * `Renderer`: 渲染器
+  * `NuPlayerAudioSink`: 音频输出, 其实现: `AudioOutput`
+  * `AudioTrack`: 音频输出流, 通过`IAudioTrack`访问`audioserver`中的`TrackHandle`
+* 运行于`media.swcodec`中(本文以软解为例)
+  * `ComponentStore`: 组件库, 运行与`media.codec`和`media.swcodec`两个进程, 通过`IComponentStore`接口提供 Codec 2 框架的解码器实现
+  * `android::hardware::media::c1::V1_2::Component`为 CCodec 2 框架解码器组件对于`HIDL`的实现, 其通过`IComponent`向其它进程的`Codec2Client::Component`提供服务, 后端实现为`C2Component`
+  * `C2Component`为 CCodec 2 框架解码器组的实现, 其有多种具体的实现:
+    * `V4L2DecodeComponent`: `V4L2`解码组件
+    * `V4L2EncodeComponent`: `V4L2`编码组件
+    * `SimpleC2Component`: Google 实现的软解组件, 简单列出几种实现:
+      * 视频
+        * `C2SoftAvcDec`
+        * `C2SoftHevcDec`
+        * `C2SoftVpxDec`
+      * 音频
+        * `C2SoftFlacDec`
+        * `C2SoftAacDec`
+    * `SampleToneMappingFilter`: ??
+    * `WrappedDecoder`: ??
+  * `android::hardware::media::c1::V1_2::utils::ComponentInterface`: 组件接口类, 负责描述一个 Codec 2 组件的各种信息, 其通过`IComponentInterface`向对端(`Codec2Client`)提供查询服务, 该接口类也被`Component`所引用, 后端实现为`C2ComponentInterface`
+  * `C2Component::Listener`: 为组件中, 客户端的回调实现, 其持有一个`IComponentListener`接口, 用于通知客户端组件的消息, 其有一个实现: `Component::Listener`, 持有父类的`IComponentListener`接口
+* Codec 2 框架中的工作类
+  * `C2Work`: 表示一个解码工作(播放器中)
+  * `C2FrameData`: 表示一个帧的数据, 其中有一组`C2Buffer`
+  * `C2Buffer`: 一个缓冲区的描述, 其包含其数据的描述`C2BufferData`
+  * `C2BufferData`: 描述一个缓冲区的数据, 以及它包含的块`C2Block[1|2]D`
+  * `C2Block1D`: 描述一个一维的缓冲区, 有如下实现:
+    * `C2LinearBlock`: 可写一个线性缓冲区
+    * `C2ConstLinearBlock`: 只读线性缓冲区
+    * `C2CircularBlock`: 环形缓冲区(环形缓冲区是"首尾相接"的线性缓冲区)
+  * `C2Block2D`: 描述一个二维的缓冲区有如下实现:
+    * `C2GraphicBlock`: 描述一个二维图形缓冲区
+    * `C2ConstGraphicBlock`: 描述一个只读的图形缓冲区(本例不涉及)
 
 # 应用层的播放器`MediaPlayer`
 ## 初始化
@@ -306,7 +419,7 @@ Android Q 以后的版本采用`CCodec`的方式加载解码插件, 此处仅仅
 
 `CCodec`再次发出异步消息`kWhatAllocate`, 由`CCodec::allocate()`响应. CCodec通过`Codec2Client::CreateFromService()`创建了`Codec2Client`, `Codec2Client`持有`IComponentStore`接口, 并通过其访问`media.swcodec`的`ComponnetStore`.
 
-`CCodec`后续通过`Codec2Client::CreateComponentByName()`创建了`Codec2Client::Component`, 大体的过程是: `Codec2Client::CreateComponentByName()` -> `Codec2Client::createComponent()` --[`Binder`]--> [`IComponentStore::createComponent_1_2()` => `ComponentStore::createComponent_1_2()`]. 该过程涉及解码器插件的加载和解码器组建的查找, 先了解接加载过程.
+`CCodec`后续通过`Codec2Client::CreateComponentByName()`创建了`Codec2Client::Component`, 大体的过程是: `Codec2Client::CreateComponentByName()` -> `Codec2Client::createComponent()` --[`Binder`]--> [`IComponentStore::createComponent_1_2()` => `ComponentStore::createComponent_1_2()`]. 该过程涉及解码器插件的加载和解码器组件的查找, 先了解接加载过程.
 
 ##### `CCodec`视频解码插件加载
 `C2SoftVpxDec`的加载过程:
@@ -321,8 +434,8 @@ Android Q 以后的版本采用`CCodec`的方式加载解码插件, 此处仅仅
   * 调用`CreateCodec2Factory`符号将返回`C2ComponentFactory`类型, 其实现为`C2SoftVpxFactory`
   * 然后调用工厂类的`createInterface`方法, 返回一个`C2ComponentInterface`接口, 其实现为`SimpleC2Interface`模板类
   * 调用`C2ComponentFactory`的`createInterface`方法, 也就是`C2SoftVpxFactory::createInterface`, 这将欻功能键一个`C2ComponentInterface`接口, 实现为`SimpleC2Interface`模板类, 对于`Vpx9`该类的实现为`C2SoftVpxDec::IntfImpl`, 其将被记录在`C2Component::Traits`中
-* 组建的创建
-  * 查找组建的工作完成后, `ComponentModule`组建的`createComponent`方法被调用, 该方法将调用上文`CreateCodec2Factory`的对应方法, 而`CreateCodec2Factory::createComponent`负责创建`C2SoftVpxDec`, 继承关系: `C2SoftVpxDec` -> `SimpleC2Component` -> `C2Component`, 而该`C2Component`最后由`ComponentStore`创建的`Component`对象持有, 而`Component`对象实现了`IComponent`, 其后续将被返回给`Codec2Client`.
+* 组件的创建
+  * 查找组件的工作完成后, `ComponentModule`组件的`createComponent`方法被调用, 该方法将调用上文`CreateCodec2Factory`的对应方法, 而`CreateCodec2Factory::createComponent`负责创建`C2SoftVpxDec`, 继承关系: `C2SoftVpxDec` -> `SimpleC2Component` -> `C2Component`, 而该`C2Component`最后由`ComponentStore`创建的`Component`对象持有, 而`Component`对象实现了`IComponent`, 其后续将被返回给`Codec2Client`.
 
 此时`IComponent`被设置在`Codec2Client::Component`后续被设置给上文`CCodec`的`CCodecBufferChannel`中. 
 
