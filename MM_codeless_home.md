@@ -1,5 +1,10 @@
+- [版本及环境说明](#版本及环境说明)
+- [声明](#声明)
 - [概念](#概念)
 - [话术](#话术)
+- [配图](#配图)
+  - [基本调用流程](#基本调用流程)
+  - [数据流转](#数据流转)
 - [部分类的简要说明](#部分类的简要说明)
 - [应用层的播放器`MediaPlayer`](#应用层的播放器mediaplayer)
   - [初始化](#初始化)
@@ -8,7 +13,7 @@
     - [播放服务中的播放器`NuPlayer`](#播放服务中的播放器nuplayer)
   - [播放器准备工作](#播放器准备工作)
     - [`MediaPlayerService`中数据源`IDataSource`的创建](#mediaplayerservice中数据源idatasource的创建)
-    - [`MediaExtractorService`中数据源探测钱的准备](#mediaextractorservice中数据源探测钱的准备)
+    - [`MediaExtractorService`中数据源探测前的准备](#mediaextractorservice中数据源探测前的准备)
     - [数据源探测插件的加载](#数据源探测插件的加载)
     - [数据源的探测](#数据源的探测)
     - [媒体文件元数据信息`MetaData`的获取](#媒体文件元数据信息metadata的获取)
@@ -30,6 +35,7 @@
       - [`CCodec`的启动](#ccodec的启动)
       - [`CCodec`解码](#ccodec解码)
         - [编码数据缓存准备`C2LinearBlock`](#编码数据缓存准备c2linearblock)
+        - [编码数据缓存的填充](#编码数据缓存的填充)
         - [解码工作描述`C2Work`以及编码数据描述`C2Buffer`的创建](#解码工作描述c2work以及编码数据描述c2buffer的创建)
         - [`media.swcodec`对解码工作的接收以及解码数据的获取](#mediaswcodec对解码工作的接收以及解码数据的获取)
         - [VPx视频解码](#vpx视频解码)
@@ -41,20 +47,31 @@
   - [视频渲染](#视频渲染)
     - [`mediaserver`中的队列](#mediaserver中的队列)
     - [应用中的队列`BLASTBufferQueue`](#应用中的队列blastbufferqueue)
-    - [SurfaceFlinger合成](#surfaceflinger合成)
-    - [硬件合成器送显](#硬件合成器送显)
-  - [音频渲染](#音频渲染)
-    - [AudioTrack 共享内存写入数据](#audiotrack-共享内存写入数据)
-    - [SurfaceFlinger 重采样及混音](#surfaceflinger-重采样及混音)
-    - [Audio HAL 回放数据](#audio-hal-回放数据)
-  - [Seek操作](#seek操作)
 - [附录](#附录)
   - [`MediaPlayer`将收到的通知类型](#mediaplayer将收到的通知类型)
   - [`NuPlayer`接受底层的消息主要有以下集中类型](#nuplayer接受底层的消息主要有以下集中类型)
-  - [举证](#举证)
+  - [部分举证](#部分举证)
     - [`IMediaExtractor`](#imediaextractor)
     - [`IMediaSource`](#imediasource)
     - [`C2GraphicBlock`](#c2graphicblock)
+
+# 版本及环境说明
+* `Android`源码版本:`android-12.0.0_r3`
+* `Android`源码来源:`https://mirrors.tuna.tsinghua.edu.cn/git/AOSP/platform/manifest`
+* `Android`源码编译配置: `aosp_crosshatch-userdebug`
+* 设备型号: `Google Pixel 3 XL (crosshatch)`
+* 设备驱动: [`SP1A.210812.016.A1`](https://developers.google.com/android/drivers/#crosshatchsp1a.210812.016.a1)
+* 主机环境: `Ubuntu 22.04 LTS`
+
+`Codeless`表示尽可能少的代码.
+
+# 声明
+* 本位所有的内容均为个人理解, **由于能力一般, 水平有限**, 文章中难免有疏漏及错误, 望体谅
+* 为了求证大部分流程的正确性, 本文的撰写进行了一些繁琐的调试工作, 可以在[部分举证](#部分举证)中看到这部分内容, 但受限于篇幅, 本文未列出所有的调试细节
+* 由于本文的所有的内容均来自`Android Open Source Project`的开源代码, 因此本文的内容也有以下原则:
+  * 本文的内容可以任意的复制修改和分发, 包括本 `声明`
+  * 本文的编写者不对本文的内容承担任何责任
+  * 本文的内容可能随时更新
 
 # 概念
 媒体文件解码流程:
@@ -78,18 +95,26 @@ media.extractor -> mediaserver --| --> |media.swcodec
 * 实例: 一个接口的实现, 一个具体的对象
 * 实例化/例化: 创建一个类的具体对象
 
+# 配图
+## 基本调用流程
+本文有些枯燥和乏味, 为了降低阅读难度, 在流程上, 特别准备了一张顺序图:  
+![Flow](out/MediaCodec/MediaCodec.png)
+## 数据流转
+解码以及渲染过程中会涉及一些数据流转, 特别准备了一张类图:  
+![Data](Player.png)
+
 # 部分类的简要说明
 * 运行于应用进程中:
   * `MediaPlayer`: 播放器, 泛指`Java`层和`Native(C++)`层的播放器
 * 运行于`media.extractor`中
   * `MediaExtractorService`: 实现`IMediaExtractorService`接口, 对外提供创建解封装的接口
-  * `DataSource`: 描述一个数据源头, 一个文件, 一个流等, 通常以`IDataSource`向外提供数据源的操作接口, 有以下几种实现:
+  * `DataSource`: 描述一个数据源头, 一个文件, 一个流等, 通常以`IDataSource`向外提供数据源的操作接口,有以有以下几种实现:
     * `DataURISource`
     * **`FileSource`**: 数据来自文件
     * `HTTPBase`: 数据来自`HTTP`链接
     * `NuCachedSource2`
-  * `MediaExtractor`: 表示一个解封装器, 其通过`IMediaExtractor`的实现`RemoteMediaExtractor`对外提供服务,, 其子类实现为`MediaExtractorCUnwrapper`, 这是一个`CMediaExtractor`的`Wrapper`
-  * `MediaTrack`: 表示一个未解码的流, 通常以`IMediaSource`的实现`RemoteMediaSource`对外提供接口, 其子类实现为`MediaTrackCUnwrapper`, 这是一个`CMediaTrack`的`Wrapper`
+  * `MediaExtractor`: 表示一个解封装器, 其通过`IMediaExtractor`的实现`RemoteMediaExtractor`对外提供服务,, 其子类实现为`MediaExtractorCUnwrapper`, 这是一个`CMediaExtractor`的`Wrapper`, 该类其实是`MPEG4Extractor`对外的抽象
+  * `MediaTrack`: 表示一个未解码的流, 通常以`IMediaSource`的实现`RemoteMediaSource`对外提供接口, 其子类实现为`MediaTrackCUnwrapper`, 这是一个`CMediaTrack`的`Wrapper`, 该类其实是`MPEG4Source`对外的抽象
 * 运行于`mediaserver`进程中
   * `MediaPlayerService`: 播放器服务, 运行在`mediaserver`中, 以`IMediaPlayerService`接口提供服务
   * `MediaPlayerService::Client`: 每个请求播放器服务的进程在`MediaPlayerService`中的描述
@@ -99,7 +124,7 @@ media.extractor -> mediaserver --| --> |media.swcodec
   * `NuPlayer`: `MediaPlayerService`中实际的播放器实例, 负责完成播放相关的大部分异步操作
   * `NuPlayer::Source`: 表示一个来源, 来源可能有很多种:
     * **`NuPlayer::GenericSource`**: 来源是本地文件, 其引用:
-      * `TinyCacheSource`: 通过`TinyCacheSource`(`DataSource`)::`mSource` -> `CallbackDataSource`(`DataSource`)访问`DataSource`接口
+      * `TinyCacheSource`: 通过`TinyCacheSource`(`DataSource`)::`mSource` -> `CallbackDataSource`(`DataSource`)访问`IDataSource`接口
       * `IMediaSource`: 被成员`mVideoSource`和`mAudioSource`所引用
     * `NuPlayer::StreamingSource`: 来源是一个流
     * `NuPlayer::HTTPLiveSource`: 来源是一个`HTTP`直播流
@@ -116,11 +141,11 @@ media.extractor -> mediaserver --| --> |media.swcodec
     * **`CCodecBufferChannel`**: Codec 2 框架实现缓冲区管理的实现
     * `ACodecBufferChannel`: OMX 框架实现缓冲区管理的实现
   * `MediaCodecBuffer`用于描述一个解码器使用的缓冲区, 其有几种扩展实现
-    * `Codec2Buffer` Codec 2 框架下的缓冲区描述, 该类有多种实现:
+    * **`Codec2Buffer`** Codec 2 框架下的缓冲区描述, 该类有多种实现:
       * `LocalLinearBuffer`: 本地线性缓存, 可写入
       * **`DummyContainerBuffer`**: 空缓存, 在解码器没有配置`Surface`且应用试图获取数据时返回空缓存
       * `LinearBlockBuffer`: 可写入的线性块缓存, 一般提供一个写入视图`C2WriteView`, 同样引用一个线性数据块`C2LinearBlock`(父类为`C2Block1D`)
-      * `ConstLinearBlockBuffer`: 只读的线性块缓存, 一般提供一个读取试图`C2ReadView`, 同样引用一个`C2Buffer`(子类为`LinearBuffer`)作为缓冲区的描述
+      * **`ConstLinearBlockBuffer`**: 只读的线性块缓存, 一般提供一个读取试图`C2ReadView`, 同样引用一个`C2Buffer`(子类为`LinearBuffer`)作为缓冲区的描述
       * `GraphicBlockBuffer`: 图形数据块缓存描述, 一般提供一个视图`C2GraphicView`(用于写入), 同样引用一个`C2GraphicBlock`(父类为`C2Block2D`)
       * `GraphicMetadataBuffer`: 图形元数据数据块, 
       * `ConstGraphicBlockBuffer`: 只读图形数据块, 其提供一个视图`C2GraphicView`(用于读取), 同样引用一个`C2Buffer`或`ABuffer`
@@ -141,14 +166,14 @@ media.extractor -> mediaserver --| --> |media.swcodec
   * `C2Component`为 CCodec 2 框架解码器组的实现, 其有多种具体的实现:
     * `V4L2DecodeComponent`: `V4L2`解码组件
     * `V4L2EncodeComponent`: `V4L2`编码组件
-    * `SimpleC2Component`: Google 实现的软解组件, 简单列出几种实现:
+    * **`SimpleC2Component`**: Google 实现的软解组件, 简单列出几种实现:
       * 视频
         * `C2SoftAvcDec`
         * `C2SoftHevcDec`
-        * `C2SoftVpxDec`
+        * **`C2SoftVpxDec`**
       * 音频
         * `C2SoftFlacDec`
-        * `C2SoftAacDec`
+        * **`C2SoftAacDec`**
     * `SampleToneMappingFilter`: ??
     * `WrappedDecoder`: ??
   * `android::hardware::media::c1::V1_2::utils::ComponentInterface`: 组件接口类, 负责描述一个 Codec 2 组件的各种信息, 其通过`IComponentInterface`向对端(`Codec2Client`)提供查询服务, 该接口类也被`Component`所引用, 后端实现为`C2ComponentInterface`
@@ -159,29 +184,30 @@ media.extractor -> mediaserver --| --> |media.swcodec
   * `C2Buffer`: 一个缓冲区的描述, 其包含其数据的描述`C2BufferData`
   * `C2BufferData`: 描述一个缓冲区的数据, 以及它包含的块`C2Block[1|2]D`
   * `C2Block1D`: 描述一个一维的缓冲区, 有如下实现:
-    * `C2LinearBlock`: 可写一个线性缓冲区
+    * **`C2LinearBlock`**: 可写一个线性缓冲区
     * `C2ConstLinearBlock`: 只读线性缓冲区
-    * `C2CircularBlock`: 环形缓冲区(环形缓冲区是"首尾相接"的线性缓冲区)
+    * **`C2CircularBlock`**: 环形缓冲区(环形缓冲区是"首尾相接"的线性缓冲区)
   * `C2Block2D`: 描述一个二维的缓冲区有如下实现:
-    * `C2GraphicBlock`: 描述一个二维图形缓冲区
+    * **`C2GraphicBlock`**: 描述一个二维图形缓冲区
     * `C2ConstGraphicBlock`: 描述一个只读的图形缓冲区(本例不涉及)
 
 # 应用层的播放器`MediaPlayer`
 ## 初始化
-`MediaPlayer`(Java)对象有自己的本地方法, 其位于`frameworks/base/media/jni/android_media_MediaPlayer.cpp`中, 这些方法均以`android_media_MediaPlayer_`开头, 因此`"native_init"`对应`android_media_MediaPlayer_native_setup()`.
+`MediaPlayer`(Java)对象有自己的本地方法, 其位于`frameworks/base/media/jni/android_media_MediaPlayer.cpp`中, 这些方法均以`android_media_MediaPlayer_`开头, 因此`"native_init"`对应`android_media_MediaPlayer_native_init()`.
 
 `MediaPlayer`在构造时会做两件事情:
-* 在加载`libmedia_jni.so`并执行`native_init`, 这个步骤只获取`MediaPlayer`类相关的一些信息, 并不会初始化 C++ 对象
-* 调用其`native`方法`native_setup`, 这个步骤负责实例化一个`MediaPlayer`(C++)类, 并生成一个集成自`MediaPlayerListener`的`JNIMediaPlayerListener`用于监听来自播放器的消息. 新创建的`MediaPlayer`(C++)对象将被保存在`MediaPlayer`(Java)的`mNativeContext`中用于后续的下行调用.
+* 在加载`libmedia_jni.so`并执行`native_init()`, 这个步骤只获取`MediaPlayer`类相关的一些信息, 并不会初始化 C++ 对象
+* 其`native`方法`native_setup()`接下来被调用, 这个步骤负责实例化一个`MediaPlayer`(C++)类, 并生成一个集成自`MediaPlayerListener`的`JNIMediaPlayerListener`用于监听来自播放器的消息. 新创建的`MediaPlayer`(C++)对象将被保存在`MediaPlayer`(Java)的`mNativeContext`中用于后续的下行调用.
 
-`MediaPlayer`的初始化比较简单, 只有设置数据源之后才能开始数据源/解码/渲染等的工作.
+`MediaPlayer`的初始化比较简单, 只有设置数据源之后才能开始 解封装 / 解码 / 渲染 等的工作.
 
 ## 设置数据源
-数据源头在 Android Multimedia中主要以`IMediaSource`, 和`MediaSource`不同. 该类别通常针对一个具体的类型, 比如一个符合`VP9`编码规范的数据源, 从该数据源读取的数据应是编码过的数据.  
+数据源是媒体的数据来源, 可能来自一个文件, 可能来自一个网络流. 媒体源是数据源中的一个未解码的流, 例如视频流 / 音频流 / 字幕流等.
+在 Android Multimedia中主要以`IMediaSource`接口体现(和`MediaSource`不同, `MediaSource`用于描述一个未编码的媒体流). 该类别通常针对一个具体的类型, 比如一个符合`VP9`编码规范的数据源, 从该数据源读取的数据应是编码过的数据.  
 通常一个媒体文件中会包含很多个部分:
-* 视频: 通常是指定的编码格式, 如: `VP9`
-* 音频: 可能存在多条音轨, 每条音轨的编码不同
-* 字幕: 多语言字母等  
+* 视频: 通常是指定的编码格式, 如: `VP9`, `H264`, `H265` 等
+* 音频: 可能存在多条音轨, 每条音轨的编码不同, 可能的有`PCM`, `G711`, `FLAC`, `APE`, `AAC`等
+* 字幕: 多语言字母等
 
 以上信息都会经过具体的封装格式进行封装, 例如常见的`MP4`, 本文的视频封装以及音视频编码参考信息:
 ```
@@ -201,30 +227,31 @@ media.extractor -> mediaserver --| --> |media.swcodec
 接下来播放器要通过`MeidaExtractor`(最终的工作位于`media.extractor`中)找到响应的数据源. 那么首先从封装信息中确定音视频`Track`数量, 其对应的编码格式, 然后再根据每条具体的`Track`构造`IMediaSource`(媒体源).
 
 `MediaPlayer.setDataSource`的Java部分过程比较复杂, 涉及`ContentResolver`, 本文不讨论, 对于本地文件, 其最终配置到底层的`android_media_MediaPlayer_setDataSourceFD()` -> `MediaPlayer::setDataSource(int fd,...)`, 此时一个问题出现了:  
-`MediaPlayer`是本地播放的么? 并不是, 是远程播放的, 那是谁在执行播放的动作? 是`MediaPlayerService`, 该服务运行在`mediaserver`中, 那么`mediaserver`中构造的播放器是什么? 接下来一起看看`MediaPlayer::setDataSource(int fd,...)`时发生了什么? 首先我们需要了解一个重要的服务: `MediaPlayerService`.
+`MediaPlayer`是本地播放的么? 并不是, 它请求远程服务完成播放, 执行播放任务的是`MediaPlayerService`, 该服务运行在`mediaserver`中, 那么`mediaserver`中构造的播放器是什么? 接下来一起看看`MediaPlayer::setDataSource(int fd,...)`时发生了什么? 首先我们需要了解一个重要的服务: `MediaPlayerService`.
 
 ### 播放服务`MediaPlayerService`
 `mediaserver`创建`IMediaPlayerService`接口的`MediaPlayerService`实现, 该类将处理来自`MediaPlayer`的请求. 在`MediaPlayerService`创建时, 会注册多个`MediaPlayerFactory::IFactory`实现, 目前主要有两种:
 * `NuPlayerFactory`: 主要的工厂类, 用于创建播放器实例: `NuPlayerDriver`, 其更底层的实现是`NuPlayer`
 * `TestPlayerFactory`: 测试目的, 不关注
+**注:**: 以前的版本还有一种`AwesomePlayer`(被`stagefrightplayer`封装), 已经过时了.
 
-`MediaPlayer`设置数据源之前要先完成实际的播放器实例的创建, 它通过`IMediaPlayerService`接口访问了`mediaserver`中的`MediaPlayerService`服务, 然后申请创建播放器, 创建播放器后, 本地的`MediaPlayer`将通过`IMediaPlayer`接口引用服务器为其创建的播放器实例. 显然该`Client`实现了`BnMediaPlayer`并在创建后返回给应用, 它将作为一个引用传递给`MediaPlayer`并作为后续所有的请求的代理, `setDataSource()`也在其中.
+`MediaPlayer`设置数据源之前要先完成实际的播放器实例的创建, 它通过`IMediaPlayerService`接口向`MediaPlayerService`服务申请创建播放器, 创建播放器后, 本地的`MediaPlayer`将通过`IMediaPlayer`接口引用服务器为其创建的播放器实例. 显然该`Client`实现了`BnMediaPlayer`并在创建后返回给应用, 它将作为一个引用传递给`MediaPlayer`并作为后续所有的请求的代理, `setDataSource()`也在其中.
 
 `MediaPlayerService`要具备通知`MediaPlayer`的能力才行, 后者实现了`BnMediaPlayerClient`, 将通过`IMediaPlayerClient`在创建`Client`时被设置在`Client`的`mClient`中
 
 在创建`Client`是也创建了`MediaPlayerService::Listener`, 该类是继承自`MediaPlayerBase::Listener`, 显然该`Listener`将负责从底层的`MediaPlayerBase`监听播放时的各种消息, 从这里, 也知道了在`MediaPlayerService`中, 负责播放任务的实现是集成自`MediaPlayerBase`的, 本例中的继承: `MediaPlayerBase` -> `MediaPlayerInterface` -> `NuPlayerDriver`, `Listener`本身持有了`Client`的引用, 因此`Listener::notify()`将通知到`Client::notify()`, 而这时调用上文的`MediaPlayerService::Listener`的`notify()`将完成通过`IMediaPlayerClient`完成对对端`MediaPlayer`的通知(见附录: `MediaPlayer`将收到的通知类型).  
 
 ### 播放服务中的播放器`NuPlayer`
-上文说到, `Client`负责响应来自`MediaPlayer`的请请求, 现在`Client`已经创建, `MediaPlayer`该通过`IMediaPlayer`接口通过它发起`setDataSource()`操作了, 这里分两个步骤:
+`Client`负责响应来自`MediaPlayer`的请请求, 现在`Client`已经创建, `MediaPlayer`该通过`IMediaPlayer`接口通过它发起`setDataSource()`操作了, 这里分两个步骤:
 * 设置数据源需要创建实际的播放器: `NuPlayerDriver`
 * 对`NuPlayerDriver`执行`setDataSource()`
 
-创建播放器的实例`NuPlayerDriver`, 这将在`MediaPlayerService::Client`响应`createPlayer`消息时通过`MediaPlayerFactory::createPlayer()`静态方法从`NuPlayerFactory`构建.  
+创建播放器的实例`NuPlayerDriver`, 这将在`MediaPlayerService::Client`响应`createPlayer()`消息时通过`MediaPlayerFactory::createPlayer()`静态方法从`NuPlayerFactory`构建.  
 
-此时创建的是`NuPlayerDriver`, 但该类会马上创建`NuPlayer`方法.
+此时创建的是`NuPlayerDriver`, 但该类会马上创建`NuPlayer`类.
 `NuPlayer`后续则会通过`MediaPlayerService::Client` -> `NuPlayerDriver`响应来自应用中`MediaPlayer`的很多事件. 
 
-因此`NuPlayer`才是完成所有播放请求的代表, 请求的类型很多,我们只讨论传统本地视频文件的播放,关注以下几种类型:
+因此`NuPlayer`最终完成所有播放请求, 请求的类型很多,我们只讨论传统本地视频文件的播放,关注以下几种类型:
 * `kWhatSetDataSource`: 设置数据源头  
   对应`MediaPlayer.setDataSource()`, 支持各种各样的数据源, 例如: URI/文件/数据源等等
 * `kWhatPrepare`: 准备播放器
@@ -234,9 +261,9 @@ media.extractor -> mediaserver --| --> |media.swcodec
 * `kWhatStart`: 开始播放
   对应`MediaPlayer.start()`
 * `kWhatSeek`: seek操作
-* 对应`MediaPlayer.seekTo()`, 该方法可以设置seek的方式, seek时需要的参数:
-  * `"seekTimeUs"`: seek的目标事件, 单位`us`
-  * `"mode"`: seek的模式(向前/向后/最近等)
+* 对应`MediaPlayer.seekTo()`, 该方法可以设置`seek`(跳转到)的方式, `seek`时需要的参数:
+  * `"seekTimeUs"`: `seek`的目标事件, 单位`us`
+  * `"mode"`: `seek`的模式(向前/向后/最近等)
   * `"needNotify"`: 是否需要通知上层, 如果需要, `NuPlayer`将通过父类`MediaPlayerInterface`的`sendEvent()`方法通知上层.
 * `kWhatPause`: 暂停操作
 * `kWhatResume`: 恢复播放
@@ -258,7 +285,7 @@ media.extractor -> mediaserver --| --> |media.swcodec
     * `HTTPLiveSource`
     * `RTSPSource`
     * `RTPSource`
-    * `GenericSource` 
+    * **`GenericSource`** 
 
 对于本地文件的简单情形, `GenericSource`创建后直接配置数据源就可以了, 数据源被创建后是否开始解析数据文件呢? 没有, 这部分工作将在`MediaPlayer.prepare()`时开始.
 
@@ -268,16 +295,14 @@ media.extractor -> mediaserver --| --> |media.swcodec
 ### `MediaPlayerService`中数据源`IDataSource`的创建
 Android 中, 原则上都是通过`MediaExtractorService`处理, `MediaExtractorService`运行在`media.extractor`进程中, 其通过`IMediaExtractorService`为其它进程提供服务. 
 
-需求方`GenericSource`通过`IMediaExtractorService::makeIDataSource()`请求创建数据源, 提供了文件描述符, `MediaExtractorService`通过工厂类`DataSourceFactory`完成从文件描述符到`DataSource`的创建, 但`DataSource`本身**不是**继承自`IDataSource`接口, 无法为需求方提供服务, 因此`DataSource`最终还是要通过`RemoteDataSource`, 而`RemoteDataSource`继承自`BnDataSource`响应后续对端的请求.
-
-那么`DataSourceFactory`创建的`DataSource`是什么呢? 显然是`FileSource`.
+需求方`GenericSource`通过`IMediaExtractorService::makeIDataSource()`请求创建数据源, 提供了文件描述符, `MediaExtractorService`通过工厂类`DataSourceFactory`完成从文件描述符到`DataSource`的创建, 但`DataSource`本身**不是**继承自`IDataSource`接口, 无法为需求方提供服务, 因此`DataSource`最终还是要通过`RemoteDataSource`, 而`RemoteDataSource`继承自`BnDataSource`响应后续对端的请求. 对于本地文件`DataSourceFactory`创建的`DataSource`是`FileSource`.
 
 `IDataSource`接口通过`Binder`从`MediaExtractorService`返回给应用后通过`TinyCacheSource`(`DataSource`)::`mSource` -> `CallbackDataSource`(`DataSource`)::`mIDataSource`引用. 
 
-### `MediaExtractorService`中数据源探测钱的准备
+### `MediaExtractorService`中数据源探测前的准备
 数据源有了, 那么需要从数据源中接封装出媒体流, 它可能是音频/视频/字幕等, 这个过程需要 对数据源中的数据进行解封装, 找到各种媒体数据所对应的流, `MediaExtractorFactory::Create()`仍然是本地工作的, 它负责通过`IMediaExtractorService::makeExtractor()`向`MediaExtractorService`请求创建`IMediaExtractor`过程, 对应的服务端实现是:`MediaExtractorService::makeExtractor()`. 
 
-但是这这个过程中, **难道**上文的`TinyCacheDataSource`作为`DataSource`通过`CreateIDataSourceFromDataSource()`转换成了`IDataSource`接口的`RemoteDataSource`又发回给`MediaExtracotrService`了?
+但是这这个过程中, 上文的`TinyCacheDataSource`作为`DataSource`通过`CreateIDataSourceFromDataSource()`转换成了`IDataSource`接口的`RemoteDataSource`又发回给`MediaExtracotrService`了?
 
 **不是的**, 在`RemoteDataSource::wrap()`不一定创建实现新的`IDataSource`的`RemoeDataSource`, 如果传入的`DataSource`本身及持有`IDataSource`, 那就直接返回了, 没有重新创建的必要, 所以返回的仍然是`TinyCacheSource`(`DataSource`)::`mSource` -> `CallbackDataSource`(`DataSource`)::`mIDataSource`所保存的来自`MediaExtractor`的`IMediaSource`.
 
@@ -343,7 +368,7 @@ Android 中, 原则上都是通过`MediaExtractorService`处理, `MediaExtractor
 #### 媒体源数据的读取
 媒体源开始工作后, `GenericSource`即刻开始从媒体源读取数据.该读取过程是异步的, `GenericSource`给其异步线程发送了`kWhatReadBuffer`消息, 异步线程读取数据的调用过程为: `GenericSource::onReadBuffer()` -> `GenericSource::readBuffer()` -> `IMediaSource::readMultiple()` --[Binder]--> `BnMediaSource::onTransact()` => `RemoteMediaSource::read()` -> `MediaTrackCUnwrapper::read()` -> `MPEG4Source::read()` -> `MediaBufferGroupHelper::acquire_buffer()` -> `MediaBufferGroup::acquire_buffer()` -> `MediaBuffer::MediaBuffer()` -> `MemoryDealer::allocate()`.
 
-上述过程, `MediaBuffer`根据其`size`的要求, 自行确定了是否使用共享内存的方式创建, 创建完成后, 数据指针被保存到其自身的`mData`成员中, 创建完成后`MediaBuffer`被封装到`newHelper->mBuffer->handle`中返回给上层
+上述过程, `MediaBuffer`根据其`size`的要求, 自行确定了是否使用**共享内存**的方式创建, 创建完成后, 数据指针被保存到其自身的`mData`成员中, 创建完成后`MediaBuffer`被封装到`newHelper->mBuffer->handle`中返回给上层
 在`CMediaBufferGroup::acquire_buffer()`中, `newHelper`:
 `newHelper`: `MediaBufferHelper`
 `newHelper->mBuffer`: `CMediaBuffer`
@@ -360,11 +385,11 @@ Android 中, 原则上都是通过`MediaExtractorService`处理, `MediaExtractor
   * 返回的`MediaBuffer`使用的为共享内存, 则直接向后传递, 传递到后面, 如果是共享内存还分两种情况:
     * 共享内存形式的`MediaBuffer`中的`IMemory`是否有缓存在`BnMediaSource`的`mIndexCache`(类型为`IndexCache`)中, 如果没有, `mIndexCache.lookup()`返回的`index`就是`0`, 所以插入到缓存当中, 等待后续获取.
 
-所以, 最终返回给`MediaPlayerService`的数据可能是`ABuffer`也可能是`IMemory`, 那我们看看`MediaPlayerService`读取数据完成后, 是如何通过`IMediaSource`的实现`BpMediaSource`处理的. 
+所以, 最终返回给`MediaPlayerService`的数据可能是`ABuffer`也可能是`IMemory`所创建的`ABuffer`, 那我们看看`MediaPlayerService`读取数据完成后, 是如何通过`IMediaSource`的实现`BpMediaSource`处理的. 
 
 `BpMediaSource`根据返回的类型判断, 如果是`IMemory`的缓冲, 则构造了`RemoteMediaBufferWrapper`(其继承关系:`RemoteMediaBufferWrapper` -> `MediaBuffer` -> `MediaBufferBase`), 如果是`ABuffer`的类型, 那就直接构造一个`ABuffer`.
 
-但是最终`NuPlayer::GenericSource::readBuffer()`将通过`mediaBufferToABuffer()`从`MediaBufferBase`(类型可能为`RemoteMediaBufferWrapper`或者`MediaBuffer`)的`data()`返回的指针, 拷贝到一个新的`ABuffer`, 并将`ABuffer`插入`GenericSource`的`track->mPackets`(音频/视频).
+但是最终`NuPlayer::GenericSource::readBuffer()`将通过`mediaBufferToABuffer()`从`MediaBufferBase`(类型可能为`RemoteMediaBufferWrapper`或者`MediaBuffer`)的`data()`返回的指针, 然后构造(注意**不是拷贝**)一个新的`ABuffer`, 并将`ABuffer`插入`GenericSource`的`track->mPackets`(音频/视频).
 
 那么这些从`IMediaSource`中读取到的数据合适被读取呢? 它们将在`NuPlayer::Decoder::fetchInputData()`是, `NuPlayer::Decoder`通过`GenericSource::dequeueAccessUnit()`被提取.
 
@@ -379,7 +404,7 @@ Android 中, 原则上都是通过`MediaExtractorService`处理, `MediaExtractor
 
 通过`android_view_Surface_getSurface()`将上层的`Surface`(Java)转换为底层的`Surface`(Native), 然后将该`Surface`(Native)指针记录在`MediaPlayer.mNativeSurfaceTexture`(Java)中, 最后通过`mp->setVideoSurfaceTexture()`也就是`MediaPlayer::setVideoSurfaceTexture()`设置从`Surface`(Native)调用`getIGraphicBufferProducer()`获得的`IGraphicBufferProducer`, 这个`IGraphicBufferProducer`正是上文`BLASTBufferQueue`中的, 该接口最终配置给底层的`MediaPlayer`(Native).
 
-`mPlayer->setVideoSurfaceTexture()`通过Binder调用到`MediaPlayerService::Client::setVideoSurfaceTexture()`, 通过上层传递的`bufferProducer`创建了新的`Surface`, 又通过`disconnectNativeWindow_l()`断开了`bufferProducer`与应用持有的`Surface`(Native)的联系, 然后将新创建的`Surface`保存到`Client::mConnectedWindow`, 这意味着, `mediaserver`直接负责生产`GraphicBuffer`给原本属于应用持有的`Surface`. 进一步, 将`Surface`配置给`NuPlayerDriver`, `NuPlayerDriver`通过`kWhatSetVideoSurface`将`Surface`发个给异步线程.`NuPlayer`保存上层的`Surface`即`mediaserver`使用应用传递的`IGraphicBufferProducer`所创建的`Surface`到`mSurface`, 并调用`NuPlayerDriver::notifySetSurfaceComplete()`告知`NuPlayerDriver::setVideoSurfaceTexture()`可以返回.
+`mPlayer->setVideoSurfaceTexture()`通过Binder调用到`MediaPlayerService::Client::setVideoSurfaceTexture()`, 通过上层传递的`bufferProducer`创建了新的`Surface`, 又通过`disconnectNativeWindow_l()`断开了`bufferProducer`与应用持有的`Surface`(Native)的联系, 然后将新创建的`Surface`保存到`Client::mConnectedWindow`, 这意味着, `mediaserver`直接负责获取并填充`GraphicBuffer`给原本属于应用持有的`Surface`. 进一步, 将`Surface`配置给`NuPlayerDriver`, `NuPlayerDriver`通过`kWhatSetVideoSurface`将`Surface`发个给异步线程.`NuPlayer`保存上层的`Surface`即`mediaserver`使用应用传递的`IGraphicBufferProducer`所创建的`Surface`到`mSurface`, 并调用`NuPlayerDriver::notifySetSurfaceComplete()`告知`NuPlayerDriver::setVideoSurfaceTexture()`可以返回.
 
 ## 播放的开始
 开始过程和上文的几个操作类似, 受限于篇幅, 仅给出简化的流程`MediaPlayer.start()` -> `MediaPlayer._start()` -> `android_media_MediaPlayer_start()` -> `MediaPlayer::start()` --[Binder]--> `NuPlayerDriver::start()` -> `NuPlayerDriver::start_l()` -> `NuPlayer::start()`.
@@ -393,21 +418,20 @@ Android 中, 原则上都是通过`MediaExtractorService`处理, `MediaExtractor
 * `DecoderPassThrough`
 * `Decoder`  
 
-如果是视频解码器只有:
-* `Decoder`
+如果是视频解码器则只创建: `Decoder`
 
 `Decoder`被创建后, 其`init()`和`configure()`方法被分别调用
 
 初始化没有太多内容, 略去. 在`DecoderBase::configure()`是`DecoderBase`通过异步消息`kWhatConfigure`调用到子类`Decoder`的`onConfigure()`, `Decoder`需要创建实际的解码器, 因此通过`MediaCodec::CreateByType()`创建`MediaCodec`, `MediaCodecList::findMatchingCodecs()`负责查找支持当前解码格式解码器的名字, 其定义在`MediaCodecList.cpp`, 如果找到解码器则创建`MediaCodec`, 创建`MediaCodec`时, 其`mGetCodecBase`被初始化为一个`std::function<>`对象, 后文的`MediaCodec::init()`会调用此`lambada`.
 
 MediaCodec`创建完成后通过`init()`调用上文的`mGetCodecBase`也就是`MediaCodec::GetCodecBase()`创建更底层的`CodecBase`, `CodecBase`的实现有多种:
-* `CCodec`
+* **`CCodec`**
 * `ACodec`
 * `MediaFilter`
 
 #### `Codec 2`解码框架解码器`CCodec`
 ##### `CCodec`的创建
-Android Q 以后的版本采用`CCodec`的方式加载解码插件, 此处仅仅是创建了`Codecbase`(这里是`CCodec`), 确定了解码器的名字, 但还没有初始化`CCodec`. 
+`Android Q`以后的版本采用`CCodec`的方式加载解码插件, 此处仅仅是创建了`Codecbase`(这里是`CCodec`), 确定了解码器的名字, 但还没有初始化`CCodec`. 
 
 ##### `CCodec`事件监听的注册
 而`MediaCodec`在初始化完`CCodec`(`CodecBase`)后:
@@ -442,22 +466,18 @@ Android Q 以后的版本采用`CCodec`的方式加载解码插件, 此处仅仅
 ### `MediaCodec`的配置
 `MediaCodec`通过`kWhatConfigure`通知异步线程执行配置, 该消息由`CCodec::initiateConfigureComponent()`负责响应, 该方法继续发出`kWhatConfigure`消息给`CCodec`的异步线程, 并由`CCodec::configure()`响应.
 
-`doConfig`是个`lambada`, 作为`std::fucntion`传递给`tryAndReportOnError()`, 该部分代码做了大量配置工作, 完成配置后, `mCallback->onComponentConfigured()`回调到上文设置的`MediaCodec::CodecCallback::onComponentConfigured()`
+`doConfig`是个非常复杂的`lambada`, 作为`std::fucntion`传递给`tryAndReportOnError()`, 该部分代码做了大量配置工作, 完成配置后, `mCallback->onComponentConfigured()`回调到上文设置的`MediaCodec::CodecCallback::onComponentConfigured()`
 
 ### `MediaCodec`的启动
-`Decoder::onConfigure()`最后负责启动`MediaCodec`, `MediaCodec`通过`kWhatStart`通知异步线程执行配置, 该消息由`CCodec::initiateStart()`负责响应. CCodec
+`Decoder::onConfigure()`最后负责启动`MediaCodec`, `MediaCodec`通过`kWhatStart`通知异步线程执行配置, 该消息由`CCodec::initiateStart()`负责响应.
 
 #### `CCodec`的启动
-该方法继续发出`kWhatStart`消息给`CCodec`的异步线程, 并由`CCodec::start()`响应. 而`CCodec::start()`也调用了`CCodecBufferChannel::start()`, 上文说到`CCodecBufferChannel`保存了`Codec2Client::Component`, 此处`Conponent::setOutputSurface()`被调用. `mOutputBufferQueue`的类型是`OutputBufferQueue`, 因此不管那个分支, 都调用了`OutputBufferQueue::configure()`, 因此`IGraphicBufferProducer`被设置到了`OutputBufferQueue`的`mIgbp`, 在后文`OutputBufferQueue::outputBuffer()`时会用到. 
+该方法继续发出`kWhatStart`消息给`CCodec`的异步线程, 并由`CCodec::start()`响应. 而`CCodec::start()`也调用了`CCodecBufferChannel::start()`, 上文说到`CCodecBufferChannel`保存了`Codec2Client::Component`, 此处`Conponent::setOutputSurface()`被调用. `mOutputBufferQueue`的类型是`OutputBufferQueue`, 因此不管那个分支, 都调用了`OutputBufferQueue::configure()`, 因此`IGraphicBufferProducer`被设置到了`OutputBufferQueue`的`mIgbp`, 在后文`OutputBufferQueue::outputBuffer()`时会用到. `OutputBufferQueue`是视频解码器的输出队列, 当解码器有`GraphicBuffer`通过`C2Block2D`描述返回给`CCodecBufferChannel`, 会注册到`Codec2Client::Component`的`OutputBufferQueue`中, 等待后续渲染时提取并送出.
 
 `postPendingRepliesAndDeferredMessages("kWhatStartCompleted")`完成后, `MediaCodec::start()`返回
 
 #### `CCodec`解码
-`CCodec`在启动`CCodecBufferChannel`后立刻调用其`requestInitialInputBuffers()`开始从数据源读取数据. 该方法从当前类的`input->buffers`中请求缓冲, 其类型为`LinearInputBuffers`, 继承关系: `LinearInputBuffers` -> `InputBuffers` -> `CCodecBuffers`, `requestNewBuffer()`正是由`InputBuffers`提供. 在请求时, 如果缓冲区没有申请过, 则通过`LinearInputBuffers::createNewBuffer()` -> `LinearInputBuffers::Alloc()`进行申请, 申请的类型为`Codec2Buffer`(父类`MediaCodecBuffer`), 申请完成后保存到`mImpl`(也就是`BuffersArrayImpl`), 最后作为`MediaCodecBuffer`返回. 请求成功之后立马通知上层, 输入缓冲可用, 该时间是通过`BufferCallback::onInputBufferAvailable()`, 上文提到`BufferCallback`是`MediaCodec`用来监听`BufferChannelBase`(也就是`CCodecBufferChannel`)消息的, 所以, `BufferCallback`会通过`kWhatCodecNotify`的`AMessaage`通知通知`MediaCodec`, 具体通知的消息为`kWhatFillThisBuffer`.
-
-`kWhatFillThisBuffer`消息由`MediaCodec::onInputBufferAvailable()`响应, `MediaBuffer`继续通过`mCallback`(类型为`AMessage`)通知上层的`NuPlayer::Decoder`, 具体的消息类型为`MediaCodec::CB_INPUT_AVAILABLE`, 播放器在得知底层输入缓冲可用时, 试图提取一段输入数据.
-
-`NuPlayer::Decoder`通过基类`NuPlayer::DecoderBase`的`onRequestInputBuffers()`去拉取数据, 这个过程将通过`GenericSource`的`dequeueAccessUnit()`方法完成. `GenericSource::dequeueAccessUnit()`上文已经讲过. 当该函数无法从缓冲区读取到数据时会通过`postReadBuffer()`从拉流, 该函数调用的`GenericSource::readBuffer()`上文已经讲过, 此处略去.
+`CCodec`在启动`CCodecBufferChannel`后立刻调用其`requestInitialInputBuffers()`开始从数据源读取数据. 该方法从当前类的`input->buffers`中请求缓冲, 其类型为`LinearInputBuffers`, 继承关系: `LinearInputBuffers` -> `InputBuffers` -> `CCodecBuffers`, `requestNewBuffer()`正是由`InputBuffers`提供. 在请求时, 如果缓冲区没有申请过, 则通过`LinearInputBuffers::createNewBuffer()` -> `LinearInputBuffers::Alloc()`进行申请, 申请的类型为`Codec2Buffer`(父类`MediaCodecBuffer`), 其实现是`LinearBlockBuffer`, 在`LinearBlockBuffer::Allocate()`创建`LinearBlockBuffer`时, 首先从`C2LinearBlock::map()`获取一个写入视图`C2WriteView`, 该试图的`data()`将返回`C2LinearBlock`底层对应的`ION`缓冲区的指针, 该指针在创建`LinearBlockBuffer`时直接构造了`ABuffer`并保存到了`LinearBlockBuffer`父类`Codec2Buffer`的父类`MediaCodecBuffer`的`mBuffer`成员中用于后续写入未解码数据时引用.
 
 ##### 编码数据缓存准备`C2LinearBlock`
 对于编码数据, 其用线性数据块`C2LinearBlock`(实现自`C2Block1D`), 底层的实现是`ION`, 其引用关系:  
@@ -478,6 +498,15 @@ Android Q 以后的版本采用`CCodec`的方式加载解码插件, 此处仅仅
 * `ion_alloc()`
 
 `C2AllocatorIon::newLinearAllocation()` 创建了上文的`C2AllocationIon`极其实现`C2AllocationIon::Impl`, 创建完成后进行的分配.
+
+##### 编码数据缓存的填充
+`Codec2Buffer`申请完成后保存到`mImpl`(也就是`BuffersArrayImpl`), 最后作为`MediaCodecBuffer`(父类)返回. 请求成功之后立马通知上层, 输入缓冲可用, 该时间是通过`BufferCallback::onInputBufferAvailable()`, 上文提到`BufferCallback`是`MediaCodec`用来监听`BufferChannelBase`(也就是`CCodecBufferChannel`)消息的, 所以, `BufferCallback`会通过`kWhatCodecNotify`的`AMessaage`通知通知`MediaCodec`, 具体通知的消息为`kWhatFillThisBuffer`.
+
+`kWhatFillThisBuffer`消息由`MediaCodec::onInputBufferAvailable()`响应, `MediaBuffer`继续通过`mCallback`(类型为`AMessage`)通知上层的`NuPlayer::Decoder`, 具体的消息类型为`MediaCodec::CB_INPUT_AVAILABLE`, 播放器在得知底层输入缓冲可用时, 试图提取一段输入数据.
+
+`NuPlayer::Decoder`通过基类`NuPlayer::DecoderBase`的`onRequestInputBuffers()`去拉取数据, 这个过程将通过`GenericSource`的`dequeueAccessUnit()`方法完成, **注意**: 此处`dequeueAccessUnit()`需要一个判断读取音频还是视频的参数, 继而判断通过`mAudioTrack`还是`mVideoTrack`来获取数据, 这两个成员上文已经介绍过. `GenericSource::dequeueAccessUnit()`上文已经讲过. 当该函数无法从缓冲区读取到数据时会通过`postReadBuffer()`从拉流, 该函数调用的`GenericSource::readBuffer()`上文已经讲过, 此处略去.
+
+`dequeueAccessUnit`得到`ABuffer`是上文`GenericSource`给出的, 其所有权属于`media.extractor`, 其指针指向的是该进程中的共享内存, 但`MediaCodecBuffer`才是解码器需要的缓冲区描述, 上面说到, 该缓存其实是`ION`缓冲区, 已经通过写入视图(`C2WriteView`)映射到`ABuffer`, 那么什么何时从`ABuffer`拷贝到`MediaCodecBuffer::mBuffer`的`ABuffer`中的呢? 是在`DecoderBase::onRequestInputBuffers()` -> `Decoder::doRequestBuffers()` -> `Decoder::onInputBufferFetched()`完成`GenericSource::dequeueAccessUnit()`后执行的. 至此编码数据已经填充到`LinearBlockBuffer`的`C2Block1D`(也就是`C2LinearBlock`)中.
 
 ##### 解码工作描述`C2Work`以及编码数据描述`C2Buffer`的创建
 通过`objcpy()`完成`C2Work`到`Work`的转换, 后者支持序列化, 便于通过Binder发送:  
@@ -553,7 +582,7 @@ Android Q 以后的版本采用`CCodec`的方式加载解码插件, 此处仅仅
 继续向上层通知, 通知路径有两条: 
 * `HidlListener::onWorkDone()` -> 
   * `Codec2Client::Component::handleOnWorkDone()`, 这条路径未执行
-  * `Codec2Client::Listener` => `CCodec::ClientListener::onWorkDone()` -> 
+  * **`Codec2Client::Listener`** => **`CCodec::ClientListener::onWorkDone()`** -> 
     * `CCodec` -> 
       * `CCodecBufferChannel::onWorkDone()` ->
         * `BufferCallback::onOutputBufferAvailable()`
@@ -572,7 +601,7 @@ Android Q 以后的版本采用`CCodec`的方式加载解码插件, 此处仅仅
 ### 应用中的队列`BLASTBufferQueue`
 上文说到`GraphicBuffer`通过`CCodecBufferChannel`的`OutputBufferQueue`由`IGraphicBufferProducer::queueBuffer()`被推送到系统相册里, `Surface`表面内嵌缓冲队列`BLASTBufferQueue`的生产者`BBQBufferQueueProducer`, 然后`BLASTBufferQueue`的消费者`BufferQueueConsumer`将通过父类接口`ConsumerBase::FrameAvailableListener()`通知对应的实现为:`BLASTBufferQueue::onFrameAvailable()`进行 进一步处理.
 
-### SurfaceFlinger合成
+<!-- ### SurfaceFlinger合成
 
 ### 硬件合成器送显
 
@@ -584,7 +613,7 @@ Android Q 以后的版本采用`CCodec`的方式加载解码插件, 此处仅仅
 
 ### Audio HAL 回放数据
 
-## Seek操作
+## Seek操作 -->
 
 # 附录
 ## `MediaPlayer`将收到的通知类型
@@ -704,8 +733,7 @@ Android Q 以后的版本采用`CCodec`的方式加载解码插件, 此处仅仅
     * `DecoderBase::kWhatError`: 解码遇到错误
       * `"err"`: 错误原因, 错误码将通过`MEDIA_INFO`类型报给上层
 
-## 举证
-
+## 部分举证
 ### `IMediaExtractor`
 `MediaExtractorService::makeExtractor()`下断点:  
 ```
