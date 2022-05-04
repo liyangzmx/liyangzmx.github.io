@@ -599,7 +599,7 @@ MediaCodec`创建完成后通过`init()`调用上文的`mGetCodecBase`也就是`
 上文讲过, `GraphicBuffer`的跨进程经历了很多步骤, 它通过`BnHwGraphicBufferProducer::dequeueBuffer()`响应`media.swcodec`被转化为`HardwareBuffer`通过`Binder`获取, 通过`h2b()`转化为`GraphicBuffer`, 在数据填充完成后, 又通过`Binder`传回, 在`mediaserver`中通过`h2b`转化回`GraphicBuffer`, 并通过`Codec2Buffer`作为`MediaCodecBuffer`给到`MediaCodec`通知上层同步, 同步完成后它最终将由`MediaCodec`触发渲染, `NuPlayer::Renderer`确定可以渲染时, 将通过`kWhatReleaseOutputBuffer`消息告知`MediaCodec`渲染, 响应该消息的是:`MediaCodec::onReleaseOutputBuffer()`, 显然`MediaCodec`将调用`CCodecBufferChannel`执行`Codec2Buffer`的渲染, `Codec2Buffer`原本是保存在`CCodecBufferChannel`的`OutputBufferQueue`中, 在渲染时`GraphicBuffer`将通过`BpGraphicBufferProducer::queueBuffer()`被推出.
 
 ### 应用中的队列`BLASTBufferQueue`
-上文说到`GraphicBuffer`通过`CCodecBufferChannel`的`OutputBufferQueue`由`IGraphicBufferProducer::queueBuffer()`被推送到系统相册里, `Surface`表面内嵌缓冲队列`BLASTBufferQueue`的生产者`BBQBufferQueueProducer`, 然后`BLASTBufferQueue`的消费者`BufferQueueConsumer`将通过父类接口`ConsumerBase::FrameAvailableListener()`通知对应的实现为:`BLASTBufferQueue::onFrameAvailable()`进行 进一步处理.
+上文说到`GraphicBuffer`通过`CCodecBufferChannel`的`OutputBufferQueue`由`IGraphicBufferProducer::queueBuffer()`被推送到系统相册里, `Surface`表面内嵌缓冲队列`BLASTBufferQueue`的生产者`BBQBufferQueueProducer`, 然后`BLASTBufferQueue`的消费者`BufferQueueConsumer`将通过父类接口`ConsumerBase::FrameAvailableListener()`通知对应的实现为:`BLASTBufferQueue::onFrameAvailable()`进行 进一步处理. `BLASTBufferQueue`在`processNextBufferLocked()`中进一步处理收到的`GraphicBuffer`, 其此时构造一个`SurfaceComposerClient::Transaction`请求, 准备提交给`SurfaceFlinger`
 
 <!-- ### SurfaceFlinger合成
 
