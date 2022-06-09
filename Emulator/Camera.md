@@ -1,0 +1,70 @@
+
+camera请求的提交
+```
+ICameraDeviceUser::submitRequestList()
+    CameraDeviceClient::submitRequestList()
+        Camera3Device::captureList()
+            Camera3Device::submitRequestsHelper()
+                Camera3Device::RequestThread::queueRequestList()
+```
+cameraserver对请求的处理
+```
+Camera3Device::RequestThread::threadLoop()
+    Camera3Device::RequestThread::prepareHalRequests()
+        Camera3Stream::getBuffer()
+            Camera3OutputStream::getBufferLocked()
+                Camera3OutputStream::getBufferLockedCommon()
+                    Surface::dequeueBuffer()
+    Camera3Device::RequestThread::sendRequestsBatch()
+        Camera3Device::HalInterface::processBatchCaptureRequests()
+            ICameraDeviceSession::processCaptureRequest_3_7()
+```
+
+android.hardware.camera.provider@2.7-service-google对请求的处理
+```
+BnHwCameraDeviceSession::processCaptureRequest_3_7()
+    HidlCameraDeviceSession::processCaptureRequest_3_7()
+        CameraDeviceSession::ProcessCaptureRequest()
+            BasicCaptureSession::ProcessRequest()
+                RealtimeProcessBlock::ProcessRequests()
+                    EmulatedCameraDeviceSessionHwlImpl::SubmitRequests()
+                        EmulatedRequestProcessor::ProcessPipelineRequests()
+                            EmulatedRequestProcessor::CreateSensorBuffers()
+                                EmulatedRequestProcessor::LockSensorBuffer()
+                                    HandleImporter::lockYCbCr()
+                                        IMapper::lockYCbCr()
+                                            BsMapper::lockYCbCr()
+                                                GoldfishMapper::lockYCbCr()
+                                                    GoldfishMapper::lockYCbCrImpl()
+```
+
+android.hardware.camera.provider@2.7-service-google处理拍照请求
+```
+EmulatedRequestProcessor::RequestProcessorLoop()
+    EmulatedSensor::SetCurrentRequest()
+```
+
+android.hardware.camera.provider@2.7-service-google通知cameraserver
+```
+EmulatedSensor::threadLoop()
+    RealtimeProcessBlock::NotifyHwlPipelineResult()
+        BasicResultProcessor::ProcessResult()
+            HidlCameraDeviceSession::ProcessCaptureResult()
+                ICameraDeviceCallback::processCaptureResult_3_4()
+
+```
+
+cameraserver对回调的响应
+```
+BnHwCameraDeviceCallback::_hidl_processCaptureResult_3_4()
+    Camera3Device::processCaptureResult_3_4()
+        camera3::processOneCaptureResultLocked()
+            camera3::processCaptureResult()
+                camera3::returnAndRemovePendingOutputBuffers()
+                    camera3::returnOutputBuffers()
+                        Camera3Stream::returnBuffer()
+                            Camera3OutputStream::returnBufferLocked()
+                                Camera3IOStreamBase::returnAnyBufferLocked()
+                                    Camera3OutputStream::returnBufferCheckedLocked()
+                                        Surface::queueBuffer()
+```

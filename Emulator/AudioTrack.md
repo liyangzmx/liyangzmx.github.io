@@ -1,0 +1,87 @@
+meidaserver创建FMQ
+```
+NuPlayer::Renderer::onMessageReceived()
+	NuPlayer::Renderer::onChangeAudioFormat()
+		NuPlayer::Renderer::onOpenAudioSink()
+			MediaPlayerService::AudioOutput::open()
+				AudioTrack::AudioTrack()
+					AudioTrack::set()
+						AudioTrack::createTrack_l()
+							AudioTrackClientProxy::AudioTrackClientProxy()
+								ClientProxy::ClientProxy()
+									Proxy::Proxy()
+```
+audioserver创建FMQ
+```
+IAudioFlingerService::createTrack()
+	AudioFlingerServerAdapter::createTrack()
+		AudioFlinger::PlaybackThread::createTrack_l()
+			PlaybackThread::Track::Track()
+				AudioTrackServerProxy::AudioTrackServerProxy()
+					ServerProxy::ServerProxy()
+						Proxy::Proxy()
+```					
+mediaserver写入
+```
+NuPlayer::Renderer::onMessageReceived()
+	NuPlayer::Renderer::onDrainAudioQueue()
+		MediaPlayerService::AudioOutput::write()
+			AudioTrack::write()
+				AudioTrack::obtainBuffer()
+					AudioTrack::obtainBuffer()
+```
+audioserver读取
+```
+PlaybackThread::threadLoop()
+	MixerThread::threadLoop_mix()
+		AudioMixerBase::process()
+			AudioMixerBase::process__validate()
+				AudioMixerBase::process__genericResampling()
+					AudioMixerBase::TrackBase::track__Resample()
+						android::AudioResamplerDyn()
+							CopyBufferProvider::getNextBuffer()
+								AudioFlinger::PlaybackThread::Track::getNextBuffer()
+									ServerProxy::obtainBuffer()
+	// 服务端写入到android.hardware.audio.service
+	PlaybackThread::threadLoop_write()
+		AudioStreamOutSink::write()
+			StreamOutHalHidl::write()
+				StreamOutHalHidl::write()
+					StreamOutHalHidl::callWriterThread()
+						MessageQueueBase::write()
+							MessageQueueBase::commitWrite()
+```
+android.hardware.audio.service读取
+```
+WriteThread::threadLoop()
+	DevicePortSink::create()
+		TinyalsaSink::TinyalsaSink()
+			DevicePortSink::create()
+				DevicePortSink::create()
+					TinyalsaSink::create()	
+						TinyalsaSink::TinyalsaSink()
+							talsa::pcmOpen()
+								pcm_open()
+									dlopen("libtinyalsa.so")
+									pcm_hw_open()
+									pcm_hw_mmap_status()
+										pcm_hw_mmap()
+	// android.hardware.audio.service读取数据发送给consumeThread
+	WriteThread::processCommand()
+		MessageQueueBase::read()
+		WriteThread::doWrite()
+			MessageQueueBase::read()
+			TinyalsaSink::write()
+				RingBuffer::getProduceChunk()
+```
+consumeThread消耗数据
+```
+TinyalsaSink::consumeThread()
+	RingBuffer::getConsumeChunk()
+	RingBuffer::consume()
+		pcm_write()
+			pcm_writei()
+				pcm_generic_transfer()
+					pcm_hw_ioctl()
+						ioctl()
+```
