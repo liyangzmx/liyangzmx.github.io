@@ -1,0 +1,223 @@
+@startuml Telephony
+
+skinparam {
+    ' monochrome true
+    ClassBorderColor white
+    ClassBackgroundColor white
+    InterfaceBackgroundColor yellow
+    Shadowing false
+}
+
+hide empty members
+' hide circle
+set namespaceSeparator none
+
+''' define
+package Dialer {
+class DialpadFragment
+class PreCall
+interface IInCallService
+class InCallService {
+    onBind()
+    addCall()
+    setInCallAdapter()
+}
+InCallServiceImpl : addCall()
+InCallServiceBinder : addCall()
+class Call::Callback {
+    onStateChanged()
+}
+DialerCall : update()
+DialerCallListener : onDialerCallUpdate()
+DialerCallListenerImpl : onDialerCallUpdate()
+CallList : notifyGenericListeners
+class CallList::Listener {
+    onCallListChange()
+}
+InCallPresenter : maybeStartRevealAnimation()
+IInCallService : addCall()
+class DialerUtils {
+    startActivityWithErrorToast()
+    startActivityWithErrorToast()
+    placeCallOrMakeToast()
+}
+TelecomUtil : placeCall()
+TelecomManager : placeCall()
+
+InCallStateListener : onStateChanged()
+CallCardPresenter : onStateChange()
+
+class InCallScreen
+InCallFragment : onViewCreated()
+class InCallScreenDelegate
+InCallActivity : onCreate()
+class Phone
+class Call
+}
+
+package Telephony {
+InCallServiceBindingConnection : sendCallToService()
+ITelecomService : placeCall()
+TelecomServiceImpl : placeCall()
+class UserCallIntentProcessor {
+    processIntent()
+    processOutgoingCallIntent()
+    sendIntentToDestination()
+}
+class CallIntentProcessor {
+    processIntent()
+    processOutgoingCallIntent()
+}
+
+class CallsManager {
+    startOutgoingCall()
+    addCall()
+    placeOutgoingCall
+}
+
+CallsManagerListener : onCallAdded()
+CallsManagerListenerBase : onCallAdded()
+class IncallController {
+    onCallAdded()
+    bindToService()
+    onConnected()
+}
+ConnectionServiceWrapper : createConnection()
+InCallServiceConnection : connect()
+CarSwappingInCallServiceConnection : connect()
+InCallServiceBindingConnection : connect()
+EmergencyInCallServiceConnection : connect()
+class CallsManager::Call {
+    startCreateConnection()
+}
+IConnectionService : createConnection()
+ConnectionService : createConnection()
+class TelephonyConnectionService {
+    onCreateOutgoingConnection()
+    placeOutgoingConnection
+}
+class GsmCdmaPhone {
+    dial()
+    dialInternal()
+}
+GsmCdmaCallTracker : dialGsm
+CommandsInterface : dial()
+class RIL {
+    dial()
+    emergencyDial()
+}
+
+PendingAction : performAction()
+RequestFocusCallback : onRequestFocusDone()
+class ConnectionServiceFocusManager {
+    requestFocus()
+    handleRequestFocus()
+    onRequestFocusDone()
+}
+class CreateConnectionProcessor {
+    process()
+    attemptNextPhoneAccount()
+}
+
+class NewOutgoingCallIntentBroadcaster
+interface ITelecomService
+interface IConnectionService
+class ServiceConnection {
+    onServiceConnected()
+    onConnected()
+}
+}
+
+
+package Radio {
+interface IRadio {
+    emergencyDial_1_6()
+}
+RadioImpl_1_6 : emergencyDial_1_6()
+class s_callbacks {
+    RIL_VERSION
+    onRequest()
+    currentState()
+    onSupports()
+    onCancel()
+    getVersion()
+}
+reference_ril : requestEccDial()
+}
+''' connect
+InCallService <|-- InCallServiceImpl
+InCallService ..> InCallPresenter:maybeStartRevealAnimation()
+InCallPresenter ..> InCallActivity:startActivity()
+InCallScreenDelegate o-- InCallActivity:context
+InCallFragment o-- InCallScreenDelegate:inCallScreenDelegate
+InCallScreen <|-- InCallFragment
+CallCardPresenter o-- InCallScreen:inCallScreen
+InCallStateListener <|-- CallCardPresenter
+InCallPresenter o-- InCallStateListener
+CallList::Listener <|-- InCallPresenter
+CallList o-- CallList::Listener:listeners<>
+DialerCallListenerImpl ..> CallList:notifyGenericListeners()
+DialerCallListener <|-- DialerCallListenerImpl
+DialerCall o-- DialerCallListener
+Call::Callback <|-- DialerCall
+Call o-- Call::Callback:mCallbackRecords[]
+Phone ..> Call:NEW
+InCallService o-- Phone:mPhone
+InCallServiceBinder ..> InCallService:MSG
+IInCallService <|-- InCallServiceBinder
+InCallServiceBindingConnection ..> IInCallService:addCall
+InCallServiceBindingConnection o-- ServiceConnection:mServiceConnection
+ServiceConnection ..> IncallController:onConnected()
+
+DialpadFragment ..> PreCall:start
+PreCall ..> DialerUtils:startActivityWithErrorToast
+DialerUtils ..> TelecomUtil:placeCall
+TelecomUtil ..> TelecomManager:placeCall
+TelecomManager --> ITelecomService
+ITelecomService <|-- TelecomServiceImpl
+TelecomServiceImpl o-- UserCallIntentProcessor:processIntent
+UserCallIntentProcessor ..> CallIntentProcessor:processIntent
+CallIntentProcessor o-- CallsManager:mCallsManager
+CallsManager o-- CallsManagerListener:mListeners<>
+CallsManagerListener <|-- CallsManagerListenerBase
+CallsManagerListenerBase <|-- IncallController
+IncallController o-- InCallServiceConnection:mInCallServiceConnection
+InCallServiceConnection <|-- CarSwappingInCallServiceConnection
+CarSwappingInCallServiceConnection o-- InCallServiceBindingConnection:mCurrentConnection
+InCallServiceBindingConnection <|-- EmergencyInCallServiceConnection
+EmergencyInCallServiceConnection --> InCallServiceBindingConnection
+
+UserCallIntentProcessor ..> NewOutgoingCallIntentBroadcaster:NEW
+NewOutgoingCallIntentBroadcaster o-- CallsManager:mCallsManager
+CallsManager --> CallsManager::Call
+CallsManager::Call o-- CreateConnectionProcessor:mCreateConnectionProcessor
+CallsManager o-- ConnectionServiceFocusManager:mConnectionSvrFocusMgr
+ConnectionServiceFocusManager --> RequestFocusCallback
+RequestFocusCallback o-- PendingAction:mPendingAction
+PendingAction --> ConnectionServiceWrapper
+
+CreateConnectionProcessor --> ConnectionServiceFocusManager
+CreateConnectionProcessor --> ConnectionServiceWrapper
+ConnectionServiceWrapper o-- IConnectionService:mServiceInterface
+IConnectionService <|-- ConnectionService
+ConnectionService <|-- TelephonyConnectionService
+TelephonyConnectionService --> GsmCdmaPhone
+GsmCdmaPhone o-- GsmCdmaCallTracker:mCT
+GsmCdmaCallTracker o-- CommandsInterface:mCi
+CommandsInterface <|-- RIL
+RIL o-- IRadio:mRadioProxy
+IRadio <|-- RadioImpl_1_6
+RadioImpl_1_6 --> s_callbacks
+s_callbacks --> reference_ril
+
+' reference_ril ..> IRadioIndication:CALLBACK
+' IRadioIndication <|-- RadioIndication
+' RadioIndication o-- RIL:mRadioProxy
+' RIL o-- RegistrantList:mCallStateRegistrants
+' RegistrantList ..> GsmCdmaCallTracker:EVENT_CALL_STATE_CHANGE
+' GsmCdmaCallTracker o-- GsmCdmaPhone:mPhone
+' GsmCdmaPhone ..> PstnIncomingCallNotifier:EVENT_NEW_RINGING_CONNECTION
+' PstnIncomingCallNotifier --> TelecomManager
+
+
+@enduml
