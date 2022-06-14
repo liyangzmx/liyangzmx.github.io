@@ -1,0 +1,450 @@
+@startuml Multimedia
+
+skinparam {
+    monochrome true
+    ClassBorderColor white
+    ClassBackgroundColor white
+    Shadowing false
+}
+
+hide empty members
+set namespaceSeparator none
+
+interface IMediaPlayer
+interface IMemory
+interface IComponent
+interface IDataSource
+interface IMediaSource
+interface IComposerCallback
+interface IMediaRecorder
+interface ICamera
+interface V1_0::ICameraDevice
+interface V3_2::ICameraDevice
+interface ICameraDeviceUser
+interface IAudioTrack
+interface IStreamOut
+interface IDevice
+interface IAAudioService
+interface IMediaExtractor
+interface ICameraDeviceSession
+interface ICas
+interface IDescrumber
+interface IMediaCasService
+
+class ClientManager::Impl
+class Accessor::Impl
+class C2Buffer::Impl
+class C2BufferData::Impl
+class C2Block1D::Impl
+class C2Block2D::Impl
+class C2AllocationIon::Impl
+' class C2SoftAvcDec::IntfImpl
+
+MediaMetadataRetriever o-- MediaMetadataRetrieverBase
+MediaMetadataRetrieverBase <|-- StagefrightMetadataRetriever
+StagefrightMetadataRetriever o-- IMediaExtractor:mExtractor
+
+IMediaExtractor <|-- RemoteMediaExtractor
+RemoteMediaExtractor o-- MediaExtractor:mExtractor
+MediaExtractor <|-- MediaExtractorCUnwrapper
+MediaExtractorCUnwrapper o-- CMediaExtractor:plugin
+CMediaExtractor o-- MediaExtractorPluginHelper:data
+MediaExtractorPluginHelper <|-- MPEG4Extractor
+MPEG4Extractor o-- DataSourceHelper:mDataSource
+DataSourceHelper o-- CDataSource:mSource
+CDataSource o-- TinyCacheSource : handle
+
+TinyCacheSource o-- DataSource:mSource
+DataSource <|-- .CallbackDataSource
+GenericSource o-- DataSource:mDataSource
+MPEG4Source o-- MediaBufferGroupHelper:mBufferGroup
+MediaBufferGroupHelper o-- CMediaBufferGroup:mGroup
+CMediaBufferGroup o-- MediaBufferGroup:handle
+MediaBufferGroup o-- InternalData:mInternalData 
+InternalData o-- MediaBuffer:mBuffers[]
+MediaBuffer o-- .IMemory:mMemory
+MediaBufferBase <|-- MediaBuffer
+CCodec ..> MediaBufferBase:ENCODED
+CallbackDataSource o-- IDataSource:mIDataSource
+
+GenericSource o-- Track:mVideoTrack
+Track o-- IMediaSource:mSource
+IMediaSource <|-- RemoteMediaSource
+RemoteMediaSource o-- MediaTrack:mTrack
+MediaTrack <|-- CMediaTrack
+MediaTrackHelper o-- CMediaTrack:wrapper
+MediaTrackHelper <|-- MPEG4Source
+
+' player
+MediaPlayer o-- IMediaPlayer:mPlayer
+IMediaPlayer <|-- MediaPlayerService::Client
+MediaPlayerService::Client ..> MediaPlayerBase:MediaPlayerFactory::createPlayer
+MediaPlayerBase <|-- NuPlayerDriver
+NuPlayerDriver o-- NuPlayer:mPlayer
+NuPlayer o-- .GenericSource:mSource
+NuPlayer o-- DecoderBase:mVideoDecoder
+
+' hls
+NuPlayer o-- HTTPLiveSource:mSource
+HTTPLiveSource o-- LiveSessioncher:mLiveSession
+LiveSessioncher --> PlaylistFetcher
+PlaylistFetcher o-- HTTPDownloader:mHTTPDownloader
+HTTPDownloader --> M3UParser
+HTTPDownloader o-- LiveDataSource:mDataSource
+DataSource <|-- LiveDataSource
+
+MPEG2TSSource o-- MPEG2TSExtractor:mExtractor
+MediaExtractorPluginHelper <|-- MPEG2TSExtractor
+MPEG2TSExtractor o-- DataSourceHelper:mDataSource
+MPEG2TSExtractor o-- ATSParser:mParser
+ATSParser o-- CasManager:mCasManager
+CasManager o-- ICas:mCas
+ICas <|-- CasImpl
+CasImpl o-- CasPlugin:mPluginHolder
+CasPlugin <|-- ClearKeyCasPlugin
+ClearKeyCasPlugin o-- ClearKeyFetcher:mKeyFetcher
+ClearKeyFetcher o-- LicenseFetcher:license_fetcher_
+LicenseFetcher <|-- ClearKeyLicenseFetcher
+ClearKeyLicenseFetcher o-- Asset:asset_
+ClearKeyFetcher --> EcmContainer
+EcmContainer o-- EcmDescriptor:descriptor_[]
+EcmDescriptor o-- Ecm
+
+MediaCas o-- IMediaCasService:sService
+IMediaCasService <|-- MeidaCasService
+MeidaCasService ..> DescrumberFactory:findFacotryForScheme
+DescrumberFactory ..> DescrmberPlugin:createPlugin
+DescrmberPlugin <|-- ClearKeyDescrmberPlugin
+ClearKeyDescrmberPlugin --> ClearKeyCasSession
+ClearKeyCasSession --> ClearKeyFetcher
+
+MediaDescrumber o-- JDescrumber:mNativeContext
+JDescrumber o-- IDescrumber
+IDescrumber <|-- DescrumberImpl
+DescrumberImpl o-- DescrmberPlugin:mPluginHolder
+
+' codec
+DecoderBase <|-- Decoder
+Decoder o-- MediaCodec:mCodec
+MediaCodec o-- CodecBase:mCodec
+MediaCodec o-- ICrypto:mCrypto
+ICrypto <|-- CryptoHal
+CryptoHal o-- ICryptoPlugin:mPlugin
+ICryptoPlugin <|-- CryptoPlugin
+
+' codec 2
+CodecBase <|-- CCodec
+CCodec o-- IComponent : mComponent
+CCodec o-- CCodecBufferChannel:mChannel
+IComponent <|-- Component
+Component o-- OutputBufferQueue
+OutputBufferQueue o-- IGraphicBufferProducer
+
+CCodecBufferChannel o-- BlockPools:mBlockPool
+BlockPools o--C2BlockPool:inputPool
+C2BlockPool o-- .C2PooledBlockPool::Impl:mBase
+.C2PooledBlockPool::Impl o-- ClientManager:mBufferManager
+ClientManager o-- ClientManager::Impl:mImpl
+ClientManager::Impl o-- Connection:mLocalConnection
+Connection o-- Accessor:mAccessor
+Accessor o-- Accessor::Impl
+Accessor::Impl o-- BufferPoolAllocator:mAllocator
+BufferPoolAllocator <|-- _C2BufferPoolAllocator
+_C2BufferPoolAllocator o-- C2Allocator:mAllocator
+C2Allocator <|-- C2AllocatorIon
+C2AllocatorIon ..> C2AllocationIon:NEW
+C2AllocationIon o-- C2AllocationIon::Impl:mImpl
+C2AllocationIon::Impl ..> void :map
+_C2MappedBlock1DImpl o-- void: mData
+_C2Block1DImpl <|-- _C2MappedBlock1DImpl
+C2ReadView::Impl --|> _C2MappedBlock1DImpl
+C2ReadView::Impl ..> SimpleC2Component:INPUT
+C2Component <|-- SimpleC2Component
+SimpleC2Component <|-- C2SoftAvcDec
+C2SoftAvcDec ..> Mapped:WRITE
+C2SoftAvcDec o-- C2StreamParam:mDrcTargetRefLevel
+C2StreamParam --|> C2Info
+C2Info --|> C2Param
+C2SoftAvcDec --|> SimpleInterface::BaseParams
+SimpleInterface::BaseParams --|> C2InterfaceHelper
+C2InterfaceHelper o-- FactoryImpl:_mFactory
+FactoryImpl o-- FrameHelper::Impl
+FrameHelper::Impl o-- ParamRef:mParam
+ParamRef o-- C2Param:_mRef
+
+CCodecBufferChannel o-- Input:mInput
+Input o-- InputInputBuffers:buffers
+InputInputBuffers <|-- LinearInputBuffers
+LinearInputBuffers o-- FlexBuffersImpl:mInputs[]
+FlexBuffersImpl o-- Entry:mBuffers[]
+Entry o-- Codec2Buffer:clientBuffer
+MediaCodecBuffer <|-- Codec2Buffer
+MediaCodecBuffer o-- ABuffer:mBuffer
+IMemory ..> ABuffer:mediaBufferToABuffer
+BufferInfo o-- MediaCodecBuffer:mData
+
+C2Work o-- C2FrameData:input
+C2FrameData o-- C2Buffer:mBuffers[]
+C2Buffer o-- C2Buffer::Impl:mImpl
+C2Buffer::Impl o-- BufferDataBuddy:mData
+BufferDataBuddy --|> C2BufferData
+C2BufferData o-- C2BufferData::Impl:mImpl
+C2BufferData::Impl o-- C2ConstLinearBlock:mLinearBlocks
+C2ConstLinearBlock --|> .C2Block1D
+.C2Block1D o-- C2Block1D::Impl:mImpl
+C2Block1D::Impl --|> _C2Block1DImpl
+_C2Block1DImpl o-- C2LinearAllocation:mAllocation
+C2LinearAllocation --|> .C2AllocatorIon
+C2PooledBlockPool::Impl ..> .C2Block1D:CreateLinearBlock
+C2Block1D ..>Codec2Buffer:Alloc
+Codec2Buffer ..> C2Buffer:asC2Buffer
+
+MediaCodec o-- BufferInfo:mPortBuffers[2]
+CCodecBufferChannel o-- Output:mOutput
+Output o-- OutputBuffers:buffers
+OutputBuffers <|-- OutputBuffersArray
+OutputBuffersArray o-- BuffersArrayImpl:mImpl
+BuffersArrayImpl o-- Entry:mBuffers[]
+Mapped..>ABuffer:GraphicView2MediaImageConverter
+
+C2Work o-- C2Worklet:worklets
+C2Worklet o--C2FrameData:buffers
+
+C2BufferData::Impl o-- C2ConstGraphicBlock:mGraphicBlocks
+C2ConstGraphicBlock --|> C2Block2D
+C2Block2D o-- C2Block2D::Impl:mImpl
+C2Block2D::Impl --|> _C2MappingBlock2DImpl
+_C2MappingBlock2DImpl o-- Mapped:mMapped
+_C2Block2DImpl <|-- _C2MappingBlock2DImpl
+_C2Block2DImpl o-- C2GraphicAllocation:mAllocation
+C2GraphicAllocation <|-- C2AllocationGralloc
+C2AllocationGralloc o-- hidl_handle:mHidlHandle
+hidl_handle o-- native_handle_t:mHandle
+native_handle_t ..> GraphicBuffer:initWithHandle
+native_handle_t ..> Mapped:importBuffer
+B2HGraphicBufferProducer ..> GraphicBuffer:dequeueBuffer()
+B2HGraphicBufferProducer o-- IGraphicBufferProducer:mBase
+
+' bufferqueue
+IGraphicBufferProducer <|-- BufferQueueProducer
+BufferQueueProducer o-- BufferQueueCore:mCore
+BufferQueueCore o-- IConsumerListener:mConsumerListener
+IConsumerListener <|-- ConsumerListener
+ConsumerListener <|-- ConsumerBase
+ConsumerBase o-- FrameAvailableListener:mFrameAvailableListener
+FrameAvailableListener <|-- BLASTBufferQueue
+BLASTBufferQueue --> Transaction
+Transaction o-- ComposerState:mComposerState
+ComposerState o-- layer_state_t:state
+layer_state_t o-- IBinder:surface
+
+' surfaceflinger
+IBinder <|-- BBinder
+BBinder <|--Handle
+Handle o-- Layer:owner
+Layer <|-- BufferLayer
+BufferLayer <|-- BufferStateLayer
+BufferLayer o-- ExternalTexture:mBufferInfo.mBuffer
+ExternalTexture o-- GraphicBuffer:buffer
+SurfaceFlinger o-- Layer:mLayersPendingRefresh
+SurfaceFlinger o-- DisplayDevice:mDisplays[]
+DisplayDevice o-- impl::Display:mCompositionDisplay
+impl::Output <|-- impl::Display
+impl::Output o-- RenderSurface:mRenderSurface
+RenderSurface o-- DisplaySurface:mDisplaySurface
+DisplaySurface <|-- FramebufferSurface
+FramebufferSurface o-- Hwc2::Composer:mHwc
+FrameAvailableListener o-- impl::HWComposer:mHwc
+SurfaceFlinger o-- CompositionEngine:mCompositionEngine
+CompositionEngine o-- RenderEngine:mRenderEngine
+RenderEngine <|-- RenderEngineThreaded
+RenderEngineThreaded o-- SkiaRenderEngine:mRenderEngine
+SkiaRenderEngine <|-- SkiaGLRenderEngine
+SkiaGLRenderEngine o-- LocalRef:mTextureCache<,>
+LocalRef o-- AutoBackendTexture:mTexture
+AutoBackendTexture o-- SkSurface:mSurface
+SkSurface <|-- SkSurface_Base
+SkSurface_Base <|-- SkSurface_Gpu
+SkSurface_Gpu --> GrDirectContextPriv
+GrDirectContextPriv o-- GrDirectContext:fContext
+GrDirectContext --> GrDrawingManager
+GrDrawingManager o-- GrRenderTask:fDAG
+GrRenderTask <|-- GrOpsTask
+GrOpsTask o-- OpChain:fOpChains
+OpChain o-- GrOp:fList[]
+GrOp <|- GrDrawOp
+GrDrawOp <|-- GrMeshDrawOp
+GrMeshDrawOp <|- FillRectOp
+FillRectOp --> GrQuadPerEdgeAA
+GrQuadPerEdgeAA o-- GrOpsRenderPass:fOpsRenderPass
+GrOpsRenderPass <|-- GrGLOpsRenderPass
+GrGLOpsRenderPass o-- GrGLGpu:fGpu
+GrGLGpu --> libGLESv1_CM
+
+OutputLayer o-- Layer:mLayerFE
+OutputLayer o-- OutputLayerCompositionState:mState
+CE::OutputLayer <|-- OutputLayer
+impl::Output o-- CE::OutputLayer:mCurrentOutputLayerOrdedByZ[]
+
+OutputLayerCompositionState o-- Hwc:hwc
+Hwc o-- HWC2::Layer:hwcLayer
+Hwc o-- HwcBufferCache:hwcBufferCache
+HwcBufferCache : mBuffers(GraphicBuffer)
+HWC2::Layer <|-- impl::Layer
+impl::Layer o-- Hwc2::Composer
+Hwc2::Composer <|-- impl::Composer
+
+LocalRef ..> SkCanvas:getOrCreateSurface
+SkCanvas o-- MCRec:fMCRec
+MCRec --> SkBaseGpuDevice
+SkBaseGpuDevice <|-- SkGpuDevice
+SkGpuDevice o-- GrSurfaceDrawContext:fContext
+GrSurfaceDrawContext --> GrOpsTask
+
+ComposerCallback <|--SurfaceFlinger
+ComposerCallbackBridge o-- ComposerCallback:mCallback
+IComposerCallback <|-- ComposerCallbackBridge
+
+SurfaceFlinger o-- Scheduler:mScheduler
+Scheduler o-- VsyncSchedule:mVsyncSchedule
+VsyncSchedule o-- VSyncDispatch:dispatch
+VSyncDispatch <|-- VSyncDispatchTimerQueue
+VSyncDispatchTimerQueue o-- VSyncDispatchTimerQueueEntry:mCallbacks<>
+VSyncDispatchTimerQueueEntry o-- VSyncDispatch::Callback:mCallback
+VSyncDispatch::Callback o-- CallbackRepeater
+CallbackRepeater o-- VSyncSource::Callback:mCallbacks
+VSyncSource::Callback <|-- EventThread
+EventThread o-- EventThreadConnection:mEventThreadConnections
+EventThreadConnection o-- BitTube:mChannel
+Looper o-- BitTube:mReceived
+Looper o-- Response:mResponses[]
+Response o-- Request:request
+Request o-- LooperCallback:callback
+Choreographer o-- FrameDisplayEventReceiver:mHead[]
+DisplayEventReceiver <|-- FrameDisplayEventReceiver
+NativeDisplayEventReceiver ..> DisplayEventReceiver:dispatchVsync
+LooperCallback <|-- NativeDisplayEventReceiver
+Choreographer o-- CallbackQueue:mCallbackQueues[]
+CallbackQueue o-- CallbackRecord:mHead[]
+CallbackRecord o-- TraversalRunnable:action
+ViewRootImpl o-- TraversalRunnable:mTraversalRunnable
+ViewRootImpl --> ThreadedRenderer
+HardwareRenderer <|-- ThreadedRenderer
+ThreadedRenderer o-- RenderProxy:mNativeProxy
+RenderProxy o-- DrawFrameTask
+DrawFrameTask o-- CanvasContext:mContext
+CanvasContext o-- SkiaOpenGLPipeline:mRenderPipeline
+SkiaPipeline <|-- SkiaOpenGLPipeline
+SkiaPipeline o-- EglManager:mEglManager
+EglManager --> libEGL
+libEGL --> Surface
+Surface o-- BufferQueueProducer:mGraphicBufferProducer
+
+IMediaRecorder <|-- MediaRecorderClient
+MediaRecorderClient o-- StagefrightRecorder
+StagefrightRecorder o-- MediaCodecSource:mVideoEnoderSource
+MediaCodecSource o-- MediaCodec:mEncoder
+MediaCodecSource o-- Puller:mPuller
+Puller o-- MediaSource
+MPEG4Writer o-- MPEG4Writer::Track:mTracks
+MPEG4Writer::Track o-- MediaCodecSource:mSource
+
+' camera
+MediaSource <|-- CameraSource
+CameraSource o-- Camera:mCamera
+Camera o-- ICamera:mCamera
+ICamera <|-- ICameraClient
+ICameraClient <|-- Client
+Client <|- CameraClient
+CameraClient o-- CameraHardwareInterface:mHardware
+CameraHardwareInterface o-- V1_0::ICameraDevice:mHidlDevice
+V1_0::ICameraDevice <|-- CameraDevice
+CameraDevice o-- CameraModule:mModule
+CameraModule o-- camera_module_t:mModule
+camera_module_t ..> CameraHAL:REF
+CameraHAL o-- camera_device_t:mCamera.mDevice
+camera_device_t o-- camera_device_ops_t
+
+ICameraService <|-- CameraService
+CameraService o-- CameraFlashlight:mFlashlight
+CameraFlashlight o-- ProviderFlashControl:mFlashControl
+ProviderFlashControl o-- CameraProviderManager:mProviderMananger
+CameraProviderManager o-- ProviderInfo:mProviders[]
+ProviderInfo o-- DeviceInfo3:mDevices[]
+DeviceInfo3 ..> V3_2::ICameraDevice:startDeviceInterface
+
+Client <|-- Camera2ClientBase
+Camera2ClientBase <|-- Camera2Client
+Camera2Client o-- StreamingProcessor:mStreamingProcessor
+StreamingProcessor o-- CameraDeviceBase:mDevice
+
+ICameraDeviceUser <|-- CameraDeviceClientBase
+CameraDeviceClientBase <|-- Camera2ClientBase
+Camera2ClientBase o-- CameraDeviceBase:mDevice
+CameraDeviceBase <|-- Camera3Device
+Camera3Device .. V3_2::ICameraDevice:openSession
+V3_2::ICameraDevice <|-- TrampolineDeviceInterface_3_2
+TrampolineDeviceInterface_3_2 o-- CameraDevice:mModule
+Camera3OutputStream o-- Surface:mConsumer
+Camera3IOStreamBase <|-- Camera3OutputStream
+Camera3Stream <|-- Camera3IOStreamBase
+CaptureRequest o-- Camera3Stream:mOutputStreams
+CaptureRequest o-- camera_stream_buffer:mInputBuffer
+CaptureRequest o-- PhysicalCameraSettings:mPhysicalCameraSettings
+PhysicalCameraSettings o-- CameraMetadata:settings
+CameraMetadata o-- camera_metadata_t:mBuffer
+camera_metadata_t o-- camera_metadata_data_t:[]
+
+Camera3Device ..> RequestThread:queueRequestList
+CaptureRequest ..> RequestThread:QUEUE
+RequestThread o-- HalInterface:mInterface
+HalInterface o-- ICameraDeviceSession:mHidlSession
+
+' audio
+NuPlayer o-- Renderer:mRenderer
+Renderer o-- AudioSink:mAudioSink
+AudioSink <|-- AudioOutput
+AudioOutput o-- AudioTrack:mTrack
+AudioTrack o-- IAudioTrack:mAudioTrack
+IAudioTrack <|-- TrackHandle
+TrackHandle : mTrack
+TrackHandle ..> Thread:Track
+Thread : mTracks[]
+
+Thread <|-- ThreadBase
+ThreadBase o-- EffectChain:mEffectChains[]
+EffectChain o-- EffectModule:mEffects
+EffectModule o-- EffectHalInterface:mEffectInterface
+EffectsFactoryHalInterface ..> EffectHalInterface:createEffect
+
+ThreadBase <|-- PlaybackThread
+AudioFlinger o-- PlaybackThread:mPlaybackThreads
+PlaybackThread <|-- MixerThread
+MixerThread o-- AudioStreamOut:mOutput
+AudioStreamOut o-- StreamOutHalInterface
+StreamOutHalInterface <|-- StreamOutHalHidl
+StreamHalHidl <|-- StreamOutHalHidl
+StreamHalHidl o-- IStreamOut
+IStreamOut <|-- StreamOut
+StreamOut o-- audio_stream_out_t:mStream
+
+AudioStreamOut o-- AudioHwDevice:mAudioHwDevice
+AudioHwDevice o-- DeviceHalInterface:mHwDevice
+DeviceHalInterface <|-- DeviceHalHidl
+DeviceHalHidl o-- IDevice:mDevice
+IDevice <|-- Device
+Device o-- audio_hw_device_t:mDevice
+AudioFlinger o-- MmapThread:mMmapThreads
+MmapThread <|-- MmapPlaybackThread
+MmapPlaybackThread o-- AudioStreamOut:stream
+
+' aaudio
+IAAudioService <|-- AAudioService
+AAudioService ..> AAudioServiceStreamMMAP:handle
+AAudioServiceStreamBase <|-- AAudioServiceStreamMMAP
+AAudioServiceStreamBase o-- AAudioEndpointManager:mEndpointManager
+AAudioEndpointManager o-- AAudioServiceEndpointMMAP:mExclusiveStreams[]
+AAudioServiceEndpointMMAP o-- MmapStreamInterface:mMmapStream
+MmapStreamInterface ..> AudioFlinger:openMMapStream
+
+@enduml
