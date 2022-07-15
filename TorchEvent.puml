@@ -1,0 +1,67 @@
+@startuml
+
+skinparam {
+    monochrome true
+}
+
+hide empty members
+
+interface ICameraService
+ICameraService : setTorchMode()
+
+interface ICameraDevice
+ICameraDevice : setTorchMode()
+
+interface ICameraProviderCallback
+ICameraProviderCallback : torchModeStatusChange()
+
+namespace SystemUI {
+    interface FlashlightController
+    interface QSTileImpl
+    QSTileImpl <|-- FlashlightTile
+    FlashlightTile o-- FlashlightController : mFlashlightController
+    FlashlightController<|--FlashlightControllerImpl
+    FlashlightControllerImpl-->CameraManager
+    CameraManager-->CameraManagerGlobal
+    CameraManagerGlobal-->.ICameraService
+
+    FlashlightTile : handleClick()
+    QSTileImpl : handleClick()
+    FlashlightControllerImpl : setFlashlight()
+    CameraManager : setTorchMode()
+    CameraManagerGlobal : setTorchMode()
+
+    .ICameraProviderCallback<|--CameraManagerGlobal
+}
+
+namespace CameraService {
+    .ICameraService..>CameraService
+    CameraService-->CameraFlashlight
+    CameraFlashlight-->CameraProviderManager
+    CameraProviderManager-->DeviceInfo
+    DeviceInfo-right->.ICameraDevice
+
+    CameraService : setTorchMode()
+    CameraFlashlight : setTorchMode()
+    CameraProviderManager : setTorchMode()
+    CameraProviderManager : ProviderInfo:DeviceInfo:setTorchModeForDevice()
+}
+
+namespace HAL {
+    .ICameraDevice-up->BnHwCameraDevice
+    BnHwCameraDevice-up->HidlCameraDevice
+    HidlCameraDevice o-up- CameraDevice : google_camera_device_
+    CameraDevice-up->EmulatedCameraDeviceHwlImpl
+    EmulatedCameraDeviceHwlImpl-up->EmulatedTorchState
+    EmulatedTorchState-up->.ICameraProviderCallback
+
+    BnHwCameraDevice : _hidl_setTorchMode()
+    HidlCameraDevice : setTorchMode()
+    CameraDevice : SetTorchMode()
+    EmulatedCameraDeviceHwlImpl : SetTorchMode()
+    EmulatedTorchState : SetTorchMode()
+    EmulatedTorchState : HwlCameraProviderCallback()
+    EmulatedTorchState : TorchModeStatusChangeFunc()
+}
+
+@enduml

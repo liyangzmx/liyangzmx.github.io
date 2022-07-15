@@ -1,0 +1,228 @@
+@startuml app_icon
+ 
+hide footbox
+skinparam {
+    ' defaultFontName Abyssinica SIL
+    Shadowing false  
+    backgroundColor white
+    NoteFontColor #Black
+    NoteFontSize 16
+    NoteTextAlignment left
+    NoteBackgroundColor WhiteSmoke
+    NoteColor transparent
+    NoteBorderThickness 0
+    NoteBorderColor transparent
+    NoteBorderThickness 0
+    NoteShadowing false
+    ParticipantPadding 0
+    BoxPadding 20
+    dpi 96
+    ClassBackgroundColor transparent
+    ClassHeaderBackgroundColor lightBlue
+    ClassStereotypeFontColor transparent
+    SequenceBoxBordercolor sienna
+    SequenceBoxFontSize 24
+    SequenceBoxFontColor Black
+    SequenceBoxBackgroundColor WhiteSmoke
+    SequenceLifeLineBackgroundColor WhiteSmoke
+    SequenceMessageAlignment center
+    SequenceGroupHeaderFontColor White
+    SequenceGroupHeaderFontSize 20
+    SequenceGroupBodyBackgroundColor transparent
+    SequenceGroupBorderThickness 4
+    ' SequenceGroupBackgroundColor DarkOliveGreen
+    ' SequenceGroupBorderColor DarkOliveGreen
+    SequenceGroupBackgroundColor LightBlue
+    SequenceGroupBorderColor LightBlue
+    ' transparent
+    sequence {
+        ParticipantBackgroundColor WhiteSmoke
+        ParticipantBorderColor Gray
+        ParticipantFontStyle Bold
+        ParticipantFontSize 12
+        ParticipantPadding 0
+
+        LifeLineBorderColor DimGray
+        ArrowColor Black
+        ArrowThickness 0.8
+        ColorArrowSeparationSpace 30
+    }
+}
+
+box LauncherAppsService
+participant PackageMonitor
+end box
+
+box Launcher3
+participant IOnAppsChangedListener
+participant LauncherApp
+participant LauncherModel
+participant PackageUpdatedTask
+participant Workspace
+participant PopupContainerWithArrow
+participant AllAppsList
+participant Launcher
+participant AllAppsStore
+participant AllAppsGridAdapter
+participant AlphabeticalAppsList
+participant AdapterItem
+participant AppInfo
+' participant LauncherBindableItemsContainer
+participant BubbleTextView
+participant WidgetsModel
+participant IconCache
+end box
+
+
+' ->Launcher:bindWorkspaceItemsChanged()
+' Launcher->Workspace:updateWorkspaceItems()
+' Workspace->Workspace:mapOverItems()
+' Workspace->Workspace:mapOverCellLayout()
+' Workspace->LauncherBindableItemsContainer:updateWorkspaceItems()
+' LauncherBindableItemsContainer->BubbleTextView:applyFromWorkspaceItem()
+
+
+
+' ->Launcher:bindItems()
+' Launcher->Launcher:createShortcut()
+' Launcher->BubbleTextView:applyFromWorkspaceItem()
+' BubbleTextView->BubbleTextView:applyIconAndLabel()
+' BubbleTextView->BubbleTextView:setIcon()
+
+''''''''''''''''''''' onPackageAdded
+-->PackageMonitor:**ACTION_PACKAGE_ADDED**
+PackageMonitor-->LauncherApp:onPackageAdded()
+note right:BY **IOnAppsChangedListener**
+activate LauncherApp
+LauncherApp-->LauncherModel:MSG_ADDED
+deactivate LauncherApp
+activate LauncherModel
+LauncherModel->LauncherModel:onPackageAdded()
+activate LauncherModel
+LauncherModel-->PackageUpdatedTask:OP_ADD
+note right:BY **PackageUpdatedTask**
+deactivate LauncherModel
+deactivate LauncherModel
+activate PackageUpdatedTask
+PackageUpdatedTask->AllAppsList:addPackage()
+deactivate PackageUpdatedTask
+activate AllAppsList
+
+AllAppsList->AllAppsList:add()
+activate AllAppsList
+AllAppsList->IconCache:getTitleAndIcon()
+activate IconCache
+IconCache->IconCache:applyCacheEntry()
+note over AllAppsList:**mDataChanged==true**
+activate IconCache
+deactivate IconCache
+deactivate IconCache
+
+' LauncherApp-->LauncherActivityInfo:getActivityList()
+AllAppsList-->AppInfo:NEW
+IconCache-->AppInfo:**SET**
+note over AppInfo:**bitmap**
+
+AppInfo --> AllAppsList:add()
+AllAppsList -->>o AppInfo:data[]
+group bindAllApplications
+AllAppsList->Launcher:bindAllApplications()
+deactivate AllAppsList
+deactivate AllAppsList
+activate Launcher
+Launcher->AllAppsStore:setApps()
+deactivate Launcher
+activate AllAppsStore
+AllAppsStore->AllAppsStore:notifyUpdate()
+activate AllAppsStore
+AllAppsStore->AlphabeticalAppsList:onAppsUpdated()
+deactivate AllAppsStore
+deactivate AllAppsStore
+activate AlphabeticalAppsList
+AlphabeticalAppsList->AlphabeticalAppsList:updateAdapterItems()
+activate AlphabeticalAppsList
+AlphabeticalAppsList->AlphabeticalAppsList:refillAdapterItems()
+activate AlphabeticalAppsList
+AlphabeticalAppsList-->AdapterItem:NEW
+AlphabeticalAppsList o<<-- AllAppsGridAdapter:mApps
+AdapterItem o<<-- AlphabeticalAppsList:mAdapterItems
+AlphabeticalAppsList -->>o AppInfo:mApps
+AdapterItem -->>o AppInfo:itemInfo
+deactivate AlphabeticalAppsList
+deactivate AlphabeticalAppsList
+deactivate AlphabeticalAppsList
+end group
+
+->AllAppsGridAdapter:onBindViewHolder()
+note right:**VIEW_TYPE_ICON**
+activate AllAppsGridAdapter
+group UI
+AllAppsGridAdapter->BubbleTextView:applyFromApplicationInfo()
+deactivate AllAppsGridAdapter
+activate BubbleTextView
+AdapterItem-->BubbleTextView:**USE**
+BubbleTextView->BubbleTextView:applyIconAndLabel()
+activate BubbleTextView
+deactivate BubbleTextView
+deactivate BubbleTextView
+end group
+
+' ''''''''''''''''''''' dragIcon
+' ->ItemLongClickListener:beginDrag()
+' ItemLongClickListener->Workspace:startDrag()
+' Workspace->Workspace:beginDragShared()
+' Workspace->PopupContainerWithArrow:showForIcon()
+' PopupContainerWithArrow->Launcher:refreshAndBindWidgetsForPackageUser()
+' activate Launcher
+
+
+''''''''''''''''''''' onPackageChanged
+PackageMonitor-->LauncherApp:onPackageChanged()
+note right:BY **IOnAppsChangedListener**
+activate LauncherApp
+LauncherApp->LauncherApp:postOnPackageChanged()
+activate LauncherApp
+LauncherApp-->LauncherModel:MSG_CHANGED
+deactivate LauncherApp
+deactivate LauncherApp
+activate LauncherModel
+LauncherModel->LauncherModel:onPackageChanged()
+activate LauncherModel
+LauncherModel-->PackageUpdatedTask:OP_UPDATE()
+deactivate LauncherModel
+deactivate LauncherModel
+activate PackageUpdatedTask
+
+
+PackageUpdatedTask->AllAppsList:updatePackage()
+activate AllAppsList
+AllAppsList->IconCache:getTitleAndIcon()
+AllAppsList->AllAppsList:add()
+activate AllAppsList
+AllAppsList->Launcher:bindAllApplications()
+note over AllAppsList:见: **bindAllApplications**
+deactivate AllAppsList
+deactivate AllAppsList
+
+
+PackageUpdatedTask->Launcher:refreshAndBindWidgetsForPackageUser()
+deactivate PackageUpdatedTask
+activate Launcher
+Launcher->WidgetsModel:refreshAndBindWidgetsAndShortcuts()
+deactivate Launcher
+activate WidgetsModel
+WidgetsModel-->WidgetsModel:update()
+note left:BaseModelUpdateTask()
+activate WidgetsModel
+WidgetsModel->WidgetsModel:setWidgetsAndShortcuts()
+activate WidgetsModel
+WidgetsModel->IconCache:getTitleAndIconForApp()
+deactivate WidgetsModel
+deactivate WidgetsModel
+deactivate WidgetsModel
+activate IconCache
+IconCache->IconCache:applyCacheEntry()
+activate IconCache
+deactivate IconCache
+deactivate IconCache
+

@@ -1,0 +1,527 @@
+@startuml NFC_Flow
+
+hide footbox
+skinparam {
+    ' defaultFontName Abyssinica SIL
+    Shadowing false
+    backgroundColor white
+    NoteFontColor #Black
+    NoteFontSize 16
+    NoteTextAlignment left
+    NoteBackgroundColor WhiteSmoke
+    NoteColor transparent
+    NoteBorderThickness 0
+    NoteBorderColor transparent
+    NoteBorderThickness 0
+    NoteShadowing false
+    ParticipantPadding 0
+    BoxPadding 20
+    dpi 96
+    ClassBackgroundColor transparent
+    ClassHeaderBackgroundColor lightgreen
+    ClassStereotypeFontColor transparent
+    SequenceBoxBordercolor WhiteSmoke
+    SequenceBoxFontSize 24
+    SequenceBoxFontColor Black
+    SequenceBoxBackgroundColor WhiteSmoke
+    SequenceLifeLineBackgroundColor WhiteSmoke
+    SequenceMessageAlignment center
+    SequenceGroupHeaderFontColor White
+    SequenceGroupHeaderFontSize 20
+    SequenceGroupBackgroundColor DarkOliveGreen
+    SequenceGroupBodyBackgroundColor transparent
+    SequenceGroupBorderThickness 4
+    SequenceGroupBorderColor DarkOliveGreen
+    ' transparent
+    sequence {
+        ParticipantBackgroundColor WhiteSmoke
+        ParticipantBorderColor Gray
+        ParticipantFontStyle Bold
+        ParticipantFontSize 12
+        ParticipantPadding 0
+
+        LifeLineBorderColor DimGray
+        ArrowColor Black
+        ArrowThickness 0.8
+        ColorArrowSeparationSpace 30
+    }
+}
+
+box nfci
+participant nfc_task
+participant nfc_ncif
+end box
+
+' participant nfa_sys_main
+
+box dm
+participant nfa_dm_main
+participant nfa_dm_discover
+participant nfa_dm_act
+' participant nfa_dm_action
+end box
+
+box rw
+participant rw_t2t
+participant nfa_rw_act
+participant nfa_rw_main
+participant nfa_rw_action_tbl
+end box
+
+box native
+participant NativeNfcManager
+participant NfcTag
+end box
+
+box framework #F0F0FF
+' participant "NativeNfcManager(Java)" as NativeNfcManager2
+participant "[TagEndpoint]\nNativeNfcTag" as NativeNfcTag
+participant "[DeviceHostListener]\nNfcService" as NfcService
+end box
+
+box dispatcher #F0F0FF
+participant NfcDispatcher
+participant PeripheralHandoverService
+participant BluetoothPeripheralHandover
+' participant ConfirmConnectActivity
+end box
+
+box App #F0F0FF
+participant BluetoothAdapter
+participant IAppCallback
+end box
+
+' nfa_dm_discover -->o nfc_ncif:nfc_cb.p_discv_cback
+' nfa_dm_act -->o nfa_dm_discover:nfa_dm_cb.disc_cb.entry[]
+' NfcService -->o NativeNfcManager2:mListener
+' nfa_rw_action_tbl -->o nfa_rw_main:nfa_rw_action_tbl
+' NativeNfcManager -->o nfa_rw_action_tbl:nfa_dm_cb.p_conn_cback
+
+nfc_task->nfc_task:run()
+activate nfc_task 
+
+' group Active
+create nfc_ncif
+nfc_task->nfc_ncif:gki_task_entry()
+note right:BT_EVT_TO_NFC_NCI
+activate nfc_ncif
+nfc_ncif->nfc_ncif:nci_proc_rf_management_ntf()
+note left:NCI_GID_RF_MANAGE
+activate nfc_ncif
+nfc_ncif->nfc_ncif:nfc_ncif_proc_activate()
+note left:NCI_MSG_RF_INTF_ACTIVATED
+activate nfc_ncif
+create nfa_dm_discover
+nfc_ncif->nfa_dm_discover:nfa_dm_disc_discovery_cback()
+note left:**<font color=blue>nfc_cb.p_discv_cback**
+deactivate nfc_ncif
+deactivate nfc_ncif
+deactivate nfc_ncif
+
+activate nfa_dm_discover
+nfa_dm_discover->nfa_dm_discover:nfa_dm_disc_discovery_cback()
+activate nfa_dm_discover
+nfa_dm_discover->nfa_dm_discover:nfa_dm_disc_notify_activation()
+note left:NFA_DM_RF_INTF_ACTIVATED_NTF
+activate nfa_dm_discover
+create nfa_dm_act
+nfa_dm_discover->nfa_dm_act:nfa_dm_poll_disc_cback()
+note left:**<font color=blue>nfa_dm_cb.disc_cb.entry[]**
+deactivate nfa_dm_discover
+deactivate nfa_dm_discover
+deactivate nfa_dm_discover
+
+create nfa_rw_main
+nfa_dm_act->nfa_rw_main:nfa_rw_proc_disc_evt()
+note left:NFA_DM_RF_DISC_ACTIVATED_EVT
+activate nfa_rw_main
+nfa_rw_main->nfa_rw_main:nfa_rw_handle_event()
+note left:NFA_DM_RF_DISC_ACTIVATED_EVT
+activate nfa_rw_main
+create nfa_rw_action_tbl
+nfa_rw_main->nfa_rw_action_tbl:nfa_rw_activate_ntf()
+note left:NFA_RW_ACTIVATE_NTF_EVT
+deactivate nfa_rw_main
+deactivate nfa_rw_main
+
+activate nfa_rw_action_tbl
+nfa_rw_action_tbl->nfa_rw_action_tbl:nfa_dm_notify_activation_status()
+nfa_rw_action_tbl->nfa_rw_action_tbl:nfa_dm_conn_cback_event_notify()
+activate nfa_rw_action_tbl
+create NativeNfcManager
+nfa_rw_action_tbl->NativeNfcManager:nfaConnectionCallback()
+note left:NFA_ACTIVATED_EVT\n\
+**<font color=blue>nfa_dm_cb.p_conn_cback**
+deactivate nfa_rw_action_tbl
+deactivate nfa_rw_action_tbl
+' end group
+
+activate NativeNfcManager
+create NfcTag
+NativeNfcManager->NfcTag:connectionEventHandler()
+deactivate NativeNfcManager
+activate NfcTag
+NfcTag->NfcTag:createNativeNfcTag()
+note left:NFA_ACTIVATED_EVT
+activate NfcTag
+NfcTag->NativeNfcManager:notifyNdefMessageListeners()
+note left:**<font color=blue>mListener**
+deactivate NfcTag
+deactivate NfcTag
+activate NativeNfcManager
+create NfcService
+NativeNfcManager->NfcService:onRemoteEndpointDiscovered()
+note left:**<font color=red>(JAVA)**
+deactivate NativeNfcManager
+activate NfcService
+NfcService-->NfcService:MSG_NDEF_TAG
+activate NfcService
+
+create NativeNfcTag
+NfcService->NativeNfcTag:findAndReadNdef()
+activate NativeNfcTag
+
+NativeNfcTag->NativeNfcTag:readNdef()
+activate NativeNfcTag
+NativeNfcTag->NativeNfcTag:doRead()
+activate NativeNfcTag
+' group RwReadNDef
+NativeNfcTag-->nfc_ncif:NFA_RwReadNDef()
+
+nfc_ncif-->nfc_task:nfa_sys_sendmsg()
+note right:event:NFA_RW_OP_REQUEST_EVT\n\
+op:NFA_RW_OP_READ_NDEF
+
+' nfc_task->nfa_sys_main:nfa_sys_event()
+nfc_task->nfc_task:nfa_sys_event()
+note right:NFA_RW_OP_REQUEST_EVT
+activate nfc_task 
+nfc_task->nfa_rw_main:nfa_rw_handle_event()
+deactivate nfc_task
+activate nfa_rw_main
+nfa_rw_main->nfa_rw_action_tbl:nfa_rw_handle_op_req()
+note left:NFA_RW_OP_REQUEST_EVT
+deactivate nfa_rw_main
+activate nfa_rw_action_tbl
+nfa_rw_action_tbl->nfa_rw_action_tbl:nfa_rw_detect_ndef()
+create rw_t2t
+nfa_rw_action_tbl->rw_t2t:RW_T2tLocateTlv()
+deactivate nfa_rw_action_tbl
+activate rw_t2t
+rw_t2t->rw_t2t:rw_t2t_read()
+activate rw_t2t
+rw_t2t->rw_t2t:rw_t2t_send_cmd()
+activate rw_t2t
+
+' group SendData
+rw_t2t-->nfc_ncif:NFC_SendData()
+deactivate rw_t2t
+deactivate rw_t2t
+deactivate rw_t2t
+activate nfc_ncif
+nfc_ncif->nfc_ncif:nfc_ncif_send_data()
+activate nfc_ncif
+deactivate nfc_ncif
+deactivate nfc_ncif
+
+=== **WAITING NFC CPLT_EVT** ==
+
+nfc_task->nfc_ncif:nfc_ncif_process_event()
+' deactivate nfc_task
+activate nfc_ncif
+nfc_ncif->nfc_ncif:nfc_ncif_proc_data()
+activate nfc_ncif
+nfc_ncif->nfc_ncif:nfc_data_event()
+activate nfc_ncif
+nfc_ncif->rw_t2t:rw_t2t_conn_cback()
+deactivate nfc_ncif
+deactivate nfc_ncif
+deactivate nfc_ncif
+
+activate rw_t2t
+rw_t2t->rw_t2t:rw_t2t_handle_rsp()
+activate rw_t2t
+rw_t2t->rw_t2t:rw_t2t_handle_ndef_read_rsp()
+activate rw_t2t
+create nfa_rw_act
+rw_t2t->nfa_rw_act:nfa_rw_cback()
+deactivate rw_t2t
+deactivate rw_t2t
+deactivate rw_t2t
+activate nfa_rw_act
+nfa_rw_act->nfa_rw_act:nfa_rw_handle_t2t_evt()
+activate nfa_rw_act
+nfa_rw_act->nfa_dm_act:nfa_dm_act_conn_cback_notify()
+deactivate nfa_rw_act
+deactivate nfa_rw_act
+' end group
+' end group
+activate nfa_dm_act
+nfa_dm_act->nfa_dm_act:nfa_dm_conn_cback_event_notify()
+nfa_dm_act->NativeNfcManager:nfaConnectionCallback()
+note left:NFA_READ_CPLT_EVT
+deactivate nfa_dm_act
+deactivate nfa_dm_act
+
+NativeNfcManager-->NativeNfcTag:sReadEvent
+deactivate NativeNfcTag
+deactivate NativeNfcTag
+
+
+NativeNfcTag->NativeNfcTag:addNdefTechnology()
+activate NativeNfcTag
+NativeNfcTag->NativeNfcTag:getTechExtras()
+note left:MIFARE_ULTRALIGHT
+activate NativeNfcTag
+NativeNfcTag->NativeNfcTag:isUltralightC()
+activate NativeNfcTag
+NativeNfcTag->NativeNfcTag:transceive()
+activate NativeNfcTag
+NativeNfcTag->NativeNfcTag:doTransceive()
+activate NativeNfcTag
+
+' group SendRawFrame
+NativeNfcTag->nfc_ncif:NFA_SendRawFrame()
+note right:event:NFA_DM_API_RAW_FRAME_EVT
+
+nfc_ncif-->nfc_task:nfa_sys_sendmsg()
+
+' nfc_task->nfa_sys_main:nfa_sys_event()
+nfc_task->nfc_task:nfa_sys_event()
+activate nfc_task
+nfc_task->nfa_dm_main:nfa_dm_evt_hdlr()
+deactivate nfc_task
+nfa_dm_main->nfa_dm_act:nfa_dm_act_send_raw_frame()
+nfa_dm_act-->nfc_ncif:NFC_SendData()
+activate nfc_ncif
+nfc_ncif->nfc_ncif:nfc_ncif_send_data()
+activate nfc_ncif
+deactivate nfc_ncif
+deactivate nfc_ncif
+
+=== **WAITING NFC DATA** ==
+
+nfc_task->nfc_ncif:nfc_ncif_process_event()
+deactivate nfc_task
+activate nfc_ncif
+nfc_ncif->nfc_ncif:nfc_ncif_proc_data()
+activate nfc_ncif
+nfc_ncif->nfc_ncif:nfc_data_event()
+activate nfc_ncif
+nfc_ncif->rw_t2t:rw_t2t_conn_cback()
+deactivate nfc_ncif
+deactivate nfc_ncif
+deactivate nfc_ncif
+
+rw_t2t->nfa_rw_act:nfa_rw_cback
+deactivate rw_t2t
+activate nfa_rw_act
+nfa_rw_act->nfa_rw_act:nfa_rw_handle_t2t_evt()
+activate nfa_rw_act
+nfa_rw_act->nfa_rw_act:nfa_rw_send_data_to_upper()
+note left:RW_T2T_READ_CPLT_EVT
+activate nfa_rw_act
+nfa_rw_act->nfa_dm_act:nfa_dm_act_conn_cback_notify()
+deactivate nfa_rw_act
+deactivate nfa_rw_act
+deactivate nfa_rw_act
+' end group
+
+activate nfa_dm_act
+nfa_dm_act->nfa_dm_act:nfa_dm_conn_cback_event_notify()
+activate nfa_dm_act
+nfa_dm_act->NativeNfcManager:nfaConnectionCallback()
+note left:NFA_DATA_EVT
+deactivate nfa_dm_act
+deactivate nfa_dm_act
+activate NativeNfcManager
+NativeNfcManager->NativeNfcTag:doTransceiveStatus()
+deactivate NativeNfcManager
+activate NativeNfcTag
+NativeNfcTag-->NativeNfcTag:sTransceiveEvent
+deactivate NativeNfcTag
+deactivate NativeNfcTag
+deactivate NativeNfcTag
+deactivate NativeNfcTag
+deactivate NativeNfcTag
+deactivate NativeNfcTag
+
+NativeNfcTag->NativeNfcTag:reconnect()
+activate NativeNfcTag
+NativeNfcTag->NativeNfcTag:reconnectWithStatus()
+activate NativeNfcTag
+NativeNfcTag->NativeNfcTag:doReconnect()
+activate NativeNfcTag
+NativeNfcTag->NativeNfcTag:reSelect()
+activate NativeNfcTag
+NativeNfcTag->nfc_ncif:NFA_Deactivate()
+
+
+
+NativeNfcTag->nfc_ncif:NFA_Select()
+deactivate NativeNfcTag
+deactivate NativeNfcTag
+deactivate NativeNfcTag
+deactivate NativeNfcTag
+deactivate NativeNfcTag
+nfc_ncif-->nfc_task:nfa_sys_sendmsg()
+
+
+nfc_task->nfc_task:nfa_sys_event()
+activate nfc_task
+nfc_task->nfa_dm_main:nfa_dm_evt_hdlr()
+deactivate nfc_task
+nfa_dm_main->nfa_dm_act:nfa_dm_act_select()
+activate nfa_dm_act
+nfa_dm_act->nfa_dm_act:nfa_dm_rf_discover_select()
+activate nfa_dm_act
+nfa_dm_act->nfa_dm_act:nfa_dm_disc_sm_execute()
+activate nfa_dm_act
+nfa_dm_act->nfa_dm_act:nfa_dm_disc_sm_w4_host_select()
+note left:NFA_DM_RFST_W4_HOST_SELECT
+activate nfa_dm_act
+nfa_dm_act->nfa_dm_act:NFC_DiscoverySelect()
+note left:NFA_DM_RF_DISCOVER_SELECT_CMD
+activate nfa_dm_act
+
+deactivate nfa_dm_act
+deactivate nfa_dm_act
+deactivate nfa_dm_act
+deactivate nfa_dm_act
+deactivate nfa_dm_act
+
+
+nfc_task->nfc_ncif:nfc_ncif_process_event()
+' deactivate nfc_task
+activate nfc_ncif
+nfc_ncif->nfc_ncif:nci_proc_rf_management_rsp()
+activate nfc_ncif
+nfc_ncif->nfc_ncif:nfc_ncif_rf_management_status()
+activate nfc_ncif
+nfc_ncif->nfa_dm_act:nfa_dm_disc_discovery_cback()
+deactivate nfc_ncif
+deactivate nfc_ncif
+deactivate nfc_ncif
+activate nfa_dm_act
+nfa_dm_act->nfa_dm_act:nfa_dm_disc_sm_w4_host_select()
+activate nfa_dm_act
+nfa_dm_act->nfa_dm_act:NFC_SetStaticRfCback()
+activate nfa_dm_act
+deactivate nfa_dm_act
+deactivate nfa_dm_act
+deactivate nfa_dm_act
+
+' nfc_ncif-->NativeNfcTag:nativeNfcTag_doConnectStatus()
+' note left:sReconnectEvent
+
+=== IAppCallback ===
+
+NfcService<-[#Blue]-:<font color=blue>setReaderMode()
+note left:BY: NfcAdapterService
+IAppCallback-[#Blue]->o NfcService:<font color=blue>mReaderModeParams.callback
+
+
+NfcService->NativeNfcTag:reconnect()
+activate NativeNfcTag
+NativeNfcTag->NativeNfcTag:reconnectWithStatus()
+activate NativeNfcTag
+NativeNfcTag->NativeNfcTag:doReconnect()
+activate NativeNfcTag
+deactivate NativeNfcTag
+deactivate NativeNfcTag
+deactivate NativeNfcTag
+
+NfcService->NfcService:dispatchTagEndpoint()
+activate NfcService
+NfcService-[#blue]->IAppCallback:<font color=blue>onTagDiscovered()
+
+=== NfcDispatcher ===
+
+create NfcDispatcher
+NfcService->NfcDispatcher:dispatchTag()
+deactivate NfcService
+deactivate NfcService
+deactivate NfcService
+activate NfcDispatcher
+
+NfcDispatcher->NfcDispatcher:tryOverrides()
+activate NfcDispatcher
+deactivate NfcDispatcher
+
+NfcDispatcher->NfcDispatcher:tryPeripheralHandover()
+activate NfcDispatcher
+NfcDispatcher->NfcDispatcher:HandoverDataParser.parseBluetooth()
+note left:TNF_MIME_MEDIA == **<font color=blue>"application/vnd.bluetooth.ep.oob"**
+create PeripheralHandoverService
+NfcDispatcher-->PeripheralHandoverService:onStartCommand()
+deactivate NfcDispatcher
+
+
+activate PeripheralHandoverService
+PeripheralHandoverService->PeripheralHandoverService:doPeripheralHandover()
+activate PeripheralHandoverService
+create BluetoothPeripheralHandover
+PeripheralHandoverService->BluetoothPeripheralHandover:start()
+deactivate PeripheralHandoverService
+deactivate PeripheralHandoverService
+activate BluetoothPeripheralHandover
+
+' ->InnerConnection:connected()
+' note left:IServiceConnection
+' InnerConnection->ServiceDispatcher:connected()
+' ServiceDispatcher-->RunConnection:run()
+' RunConnection->RunConnection:doConnected()
+' RunConnection->ServiceConnection:onServiceConnected()
+' ServiceConnection->BluetoothPeripheralHandover:onServiceConnected()
+' note left:BluetoothProfile.ServiceListener\n\BluetoothProfile.HEADSET
+BluetoothPeripheralHandover-->BluetoothPeripheralHandover:nextStep
+note left:MSG_NEXT_STEP
+BluetoothPeripheralHandover->BluetoothPeripheralHandover:nextStepInit()
+note left:ACTION_INIT
+activate BluetoothPeripheralHandover
+create BluetoothAdapter
+BluetoothPeripheralHandover->BluetoothAdapter:getProfileProxy()
+deactivate BluetoothPeripheralHandover
+deactivate BluetoothPeripheralHandover
+activate BluetoothAdapter
+
+BluetoothAdapter-->BluetoothPeripheralHandover:onServiceConnected()
+note left:**MSG_NEXT_STEP**
+deactivate BluetoothAdapter
+activate BluetoothPeripheralHandover
+BluetoothPeripheralHandover-->BluetoothPeripheralHandover:nextStep()
+note left:MSG_NEXT_STEP
+activate BluetoothPeripheralHandover
+BluetoothPeripheralHandover->BluetoothPeripheralHandover:nextStepInit()
+note left:ACTION_INIT
+deactivate BluetoothPeripheralHandover
+
+BluetoothPeripheralHandover->BluetoothPeripheralHandover:nextStep()
+activate BluetoothPeripheralHandover
+BluetoothPeripheralHandover-->BluetoothPeripheralHandover:nextStepConnect()
+note left:ACTION_CONNECT
+activate BluetoothPeripheralHandover
+BluetoothPeripheralHandover->BluetoothPeripheralHandover:requestPairConfirmation()
+note left:STATE_INIT_COMPLETE
+' create ConfirmConnectActivity
+BluetoothPeripheralHandover-->BluetoothPeripheralHandover:ConfirmConnectActivity:startActivity
+activate BluetoothPeripheralHandover
+deactivate BluetoothPeripheralHandover
+deactivate BluetoothPeripheralHandover
+deactivate BluetoothPeripheralHandover
+deactivate BluetoothPeripheralHandover
+
+NfcDispatcher->NfcDispatcher:NfcWifiProtectedSetup.tryNfcWifiSetup()
+note left:TNF_MIME_MEDIA == **<font color=blue>"application/vnd.wfa.wsc"**
+
+
+' note left:TNF_MIME_MEDIA == **<font color=blue>"application/com.android.managedprovisioning"**
+
+
+activate NfcDispatcher
+deactivate NfcDispatcher
+
+NfcDispatcher->NfcDispatcher:tryNdef()
+activate NfcDispatcher
+deactivate NfcDispatcher
+deactivate NfcDispatcher

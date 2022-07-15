@@ -1,0 +1,243 @@
+@startuml PMS
+
+skinparam {
+    ' monochrome true
+    ClassBorderColor white
+    ClassBackgroundColor white
+    PackageBorderColor #BFBFBF
+    ' Shadowing true
+    Linetype ortho
+    ' Linetype polyline
+
+    NoteFontColor #Black
+    NoteFontSize 16
+    NoteTextAlignment left
+    NoteBackgroundColor transparent
+    NoteColor transparent
+    NoteBorderThickness 0
+    NoteBorderColor transparent
+    NoteBorderThickness 0
+    NoteShadowing false
+}
+
+' left to right direction
+
+hide empty members
+' hide circle
+set namespaceSeparator none
+
+' package adbd {
+'     class abb {
+'         cmdMain()
+'     }
+' }
+
+package com.android.documentsui <<Rectangle>> {
+    class ActionHandler
+    class DirectoryFragment
+    class AbstractActionHandler
+}
+
+package com.android.media <<Rectangle>> {
+    class TrampolineActivity
+    class OpenHelper
+}
+
+package com.android.packageinstaller <<Rectangle>> {
+    class InstallStart
+    class InstallStaging
+    class StagingAsyncTask
+    class DeleteStagedFileOnResult
+    class PackageInstallerActivity
+    class InstallInstalling
+    class ContextWrapper
+    class Context
+    class PackageManager
+    class PackageInstaller
+    class ApplicationPackageManager
+    class Session
+}
+
+
+package system_process <<Rectangle>> {
+    class PackageManagerShellCommand
+    ' package PackageInstallerService {
+        interface IPackageInstaller
+        class PackageInstallerService
+    ' }
+
+    ' package PackageManagerService {
+        interface IPackageManager {
+            onTransact()
+            shellCommand()
+            onShellCommand()
+        }
+        class PackageManagerService
+
+        class "PackageManagerService" as PackageManagerService2 {
+            processInstallRequestsAsync()
+            installPackagesTracedLI()
+            installPackagesLI()
+            executePostCommitSteps()
+            prepareAppDataAfterInstallLIF()
+            executeBatchLI()
+        }
+        class "PackageManagerService" as PackageManagerService3
+    ' }
+
+    ' package PackageInstallerSession {
+        interface IPackageInstallerSession
+        class PackageInstallerSession {
+            commit()
+            dispatchSessionSealed()
+        }
+        class "PackageInstallerSession" as PackageInstallerSession2 {
+            handleSessionSealed()
+            dispatchStreamValidateAndCommit()
+        }
+        class "PackageInstallerSession" as PackageInstallerSession3 {
+            handleStreamValidateAndCommit()
+        }
+        class "PackageInstallerSession" as PackageInstallerSession4 {
+            handleInstall()
+            verify()
+            verifyNonStaged()
+        }
+        class "PackageInstallerSession" as PackageInstallerSession5 {
+            onVerificationComplete()
+            install()
+            installNonStaged()
+        }
+    ' }
+    ' class VerificationParams
+    ' class VerificationParams2
+    ' class VerificationParams3
+    Batch : execute()
+    Installer : createAppDataBatched()
+
+    class AbstractActionHandler {
+        onDocumentOpened()
+        manageDocument()
+    }
+
+    ' class PackageManagerShellCommand {
+    '     onCommand()
+    '     runInstall()
+    '     doRunInstall()
+    '     doCommitSession()
+    ' }
+    class StagingAsyncTask {
+        execute()
+        onPostExecute()
+    }
+    ' package VerificationParams {
+        class VerificationParams {
+            handleStartCopy()
+        }
+        class "VerificationParams" as VerificationParams2 {
+            verifyReplacingVersionCode()
+        }
+
+        class "VerificationParams" as VerificationParams3 {
+            sendApkVerificationRequest()
+        }
+        class "VerificationParams" as VerificationParams4 {
+            handleReturnCode()
+            sendVerificationCompleteNotification()
+        }
+    ' }
+
+    class AppIntegrityManagerServiceImpl
+    class PackageManagerInternal
+    class PackageHandler
+}
+
+package installd <<Rectangle>> {
+    interface IInstalld {
+        createAppDataBatched()
+    }
+}
+
+' abb .[#blue].> IPackageInstaller:onTransact()
+' note on link:"install"
+' IPackageInstaller .[#blue].> PackageManagerShellCommand:onCommand()
+' note on link:"install"
+' PackageManagerShellCommand .[#blue].> Session:commit()
+
+
+ActionHandler <|-- AbstractActionHandler
+ActionHandler : openDocument()
+ActionHandler : onDocumentOpened()
+DirectoryFragment o-- ActionHandler:mActions
+
+AbstractActionHandler ..> TrampolineActivity
+TrampolineActivity ..> OpenHelper
+OpenHelper : startViewIntent()
+
+OpenHelper ..> InstallStart:startActivityAsUser()
+note on link: "application/vnd.android.package-archive"
+
+InstallStart ..> InstallStaging:startActivity()
+
+InstallStaging : onResume()
+
+InstallStaging o-- StagingAsyncTask:mStagingTask
+
+
+StagingAsyncTask ..> DeleteStagedFileOnResult:startActivity()
+DeleteStagedFileOnResult ..> PackageInstallerActivity:startActivityForResult()
+
+PackageInstallerActivity ..> InstallInstalling:startActivity()
+note on link: click: "安装"
+
+PackageInstaller ..> Session:NEW
+
+InstallInstalling --|> ContextWrapper
+ContextWrapper : getPackageManager()
+ContextWrapper o-- Context:mBase
+Context : getPackageManager()
+Context o-- PackageManager:mPackageManager
+PackageManager : getPackageInstaller()
+PackageManager <|-- ApplicationPackageManager
+ApplicationPackageManager o-- IPackageManager:mPM
+IPackageManager ..> IPackageInstaller:getPackageInstaller()
+ApplicationPackageManager o-- PackageInstaller:mInstaller
+PackageInstaller o-- IPackageInstaller:mInstaller
+PackageInstaller : createSession()
+InstallInstalling ..> PackageInstaller
+
+PackageInstallerService --|> IPackageInstaller
+PackageManagerService --|> IPackageManager
+PackageInstallerSession --|> IPackageInstallerSession
+
+IPackageInstaller ..> IPackageInstallerSession:openSession()
+Session o-- IPackageInstallerSession:mSession
+' Session o-[#blue]- IPackageInstallerSession:mSession
+
+PackageInstallerSession ..> PackageInstallerSession2:MSG_ON_SESSION_SEALED
+PackageInstallerSession2 ..> PackageInstallerSession3:MSG_STREAM_VALIDATE_AND_COMMIT
+PackageInstallerSession3 ..> PackageInstallerSession4:MSG_INSTALL
+
+
+
+PackageInstallerSession4 ..> PackageManagerService3:verifyStage()
+PackageManagerService3 : verifyStage()
+PackageManagerService3 ..> VerificationParams:handleStartCopy()
+VerificationParams ..> VerificationParams2:verifyReplacingVersionCode()
+VerificationParams ..> VerificationParams3:sendApkVerificationRequest()
+
+
+VerificationParams3 ..> AppIntegrityManagerServiceImpl:ACTION_PACKAGE_NEEDS_INTEGRITY_VERIFICATION
+AppIntegrityManagerServiceImpl o-- PackageManagerInternal:mPackageManagerInternal
+
+PackageManagerInternal ..> PackageHandler:INTEGRITY_VERIFICATION_COMPLETE
+
+PackageInstallerSession5 o-- PackageManagerService2:mPm
+VerificationParams4 ..> PackageInstallerSession5:onVerificationComplete()
+PackageHandler ..> VerificationParams4:handleIntegrityVerificationFinished()
+
+PackageManagerService2 ..> Batch:execute()
+Batch o-- Installer:mInstaller
+Installer o-- IInstalld:mInstalld
+
+@enduml

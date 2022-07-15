@@ -1,0 +1,153 @@
+@startuml broadcast
+ 
+hide footbox
+skinparam {
+    ' defaultFontName Abyssinica SIL
+    Shadowing false  
+    backgroundColor white
+    NoteFontColor #Black
+    NoteFontSize 16
+    NoteTextAlignment left
+    NoteBackgroundColor WhiteSmoke
+    NoteColor transparent
+    NoteBorderThickness 0
+    NoteBorderColor transparent
+    NoteBorderThickness 0
+    NoteShadowing false
+    ParticipantPadding 0
+    BoxPadding 20
+    dpi 96
+    ClassBackgroundColor transparent
+    ClassHeaderBackgroundColor lightBlue
+    ClassStereotypeFontColor transparent
+    SequenceBoxBordercolor sienna
+    SequenceBoxFontSize 24
+    SequenceBoxFontColor Black
+    SequenceBoxBackgroundColor WhiteSmoke
+    SequenceLifeLineBackgroundColor WhiteSmoke
+    SequenceMessageAlignment center
+    SequenceGroupHeaderFontColor White
+    SequenceGroupHeaderFontSize 20
+    SequenceGroupBodyBackgroundColor transparent
+    SequenceGroupBorderThickness 4
+    ' SequenceGroupBackgroundColor DarkOliveGreen
+    ' SequenceGroupBorderColor DarkOliveGreen
+    SequenceGroupBackgroundColor LightBlue
+    SequenceGroupBorderColor LightBlue
+    ' transparent
+    sequence {
+        ParticipantBackgroundColor WhiteSmoke
+        ParticipantBorderColor Gray
+        ParticipantFontStyle Bold
+        ParticipantFontSize 12
+        ParticipantPadding 0
+
+        LifeLineBorderColor DimGray
+        ArrowColor Black
+        ArrowThickness 0.8
+        ColorArrowSeparationSpace 30
+    }
+}
+
+box settings 
+participant TimeFormatPreferenceController
+' participant ContextWrapper
+participant ContextImpl
+end box
+
+box system_process
+box ActivityManagerService #FFEEEE
+participant PackageReceiver
+participant OverlayManagerService
+participant ActivityManagerService
+participant BroadcastQueue
+end box
+box LauncherAppsService #FFEEEE
+participant ApplicationThread
+participant InnerReceiver
+participant PackageMonitor
+end box
+end box
+
+box Launcher3
+participant LauncherApp
+participant "ApplicationThread" as ApplicationThread2
+participant ActivityThread
+participant "InnerReceiver" as InnerReceiver2
+participant AnalogClock
+end box
+
+
+->TimeFormatPreferenceController:update24HourFormat()
+activate TimeFormatPreferenceController
+TimeFormatPreferenceController->TimeFormatPreferenceController:timeUpdated()
+activate TimeFormatPreferenceController
+TimeFormatPreferenceController->ContextImpl:sendBroadcast()
+note right:ContextWrapper.sendBroadcast()
+deactivate TimeFormatPreferenceController
+deactivate TimeFormatPreferenceController
+activate ContextImpl
+ContextImpl-->ActivityManagerService:broadcastIntentWithFeature()
+deactivate ContextImpl
+activate ActivityManagerService
+
+-->PackageReceiver:onPackageAdded()
+note right:**ACTION_PACKAGE_ADDED**
+activate PackageReceiver
+PackageReceiver->OverlayManagerService:updateTargetPackagesLocked()
+deactivate PackageReceiver
+activate OverlayManagerService
+OverlayManagerService-->OverlayManagerService:broadcastActionOverlayChanged()
+activate OverlayManagerService
+OverlayManagerService-->ActivityManagerService:broadcastIntent()
+note right:**CollectionUtils.forEach**
+deactivate OverlayManagerService
+deactivate OverlayManagerService
+ActivityManagerService->ActivityManagerService:broadcastIntentWithFeature()
+activate ActivityManagerService
+ActivityManagerService->ActivityManagerService:broadcastIntentLocked()
+activate ActivityManagerService
+ActivityManagerService->BroadcastQueue:scheduleBroadcastsLocked()
+deactivate ActivityManagerService
+deactivate ActivityManagerService
+deactivate ActivityManagerService
+activate BroadcastQueue
+BroadcastQueue-->BroadcastQueue:processNextBroadcast()
+note right:**BroadcastHandler:BROADCAST_INTENT_MSG**
+activate BroadcastQueue
+
+
+BroadcastQueue->BroadcastQueue:deliverToRegisteredReceiverLocked()
+activate BroadcastQueue
+BroadcastQueue->BroadcastQueue:performReceiveLocked()
+activate BroadcastQueue
+BroadcastQueue->ApplicationThread:scheduleRegisteredReceiver()
+ApplicationThread->InnerReceiver:performReceive()
+InnerReceiver->PackageMonitor:onReceive()
+note right:ReceiverDispatcher.performReceive()\n\**ACTION_PACKAGE_ADDED**
+PackageMonitor-->LauncherApp:onPackageAdded()
+note left:BY **IOnAppsChangedListener**
+
+BroadcastQueue-->ApplicationThread2:scheduleRegisteredReceiver()
+deactivate BroadcastQueue
+deactivate BroadcastQueue
+deactivate BroadcastQueue
+deactivate BroadcastQueue
+ApplicationThread2->InnerReceiver2:performReceive()
+InnerReceiver2->AnalogClock:onReceive()
+note left:ReceiverDispatcher.performReceive()
+' note left:BroadcastReceiver.onReceive()
+
+' BroadcastQueue->BroadcastQueue:processNextBroadcastLocked()
+' activate BroadcastQueue
+' BroadcastQueue->BroadcastQueue:processCurBroadcastLocked()
+' activate BroadcastQueue
+' BroadcastQueue-->ApplicationThread2:scheduleReceiver()
+' deactivate BroadcastQueue
+' deactivate BroadcastQueue
+' ApplicationThread2-->ActivityThread:handleReceiver()
+' note right:RECEIVER
+
+
+
+@enduml

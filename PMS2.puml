@@ -1,0 +1,362 @@
+@startuml PMS2
+ 
+hide footbox
+skinparam {
+    ' defaultFontName Abyssinica SIL
+    Shadowing false  
+    backgroundColor white
+    NoteFontColor #Black
+    NoteFontSize 16
+    NoteTextAlignment left
+    NoteBackgroundColor WhiteSmoke
+    NoteColor transparent
+    NoteBorderThickness 0
+    NoteBorderColor transparent
+    NoteBorderThickness 0
+    NoteShadowing false
+    ParticipantPadding 0
+    BoxPadding 20
+    dpi 96
+    ClassBackgroundColor transparent
+    ClassHeaderBackgroundColor lightBlue
+    ClassStereotypeFontColor transparent
+    SequenceBoxBordercolor sienna
+    SequenceBoxFontSize 24
+    SequenceBoxFontColor Black
+    SequenceBoxBackgroundColor WhiteSmoke
+    SequenceLifeLineBackgroundColor WhiteSmoke
+    SequenceMessageAlignment center
+    SequenceGroupHeaderFontColor White
+    SequenceGroupHeaderFontSize 20
+    SequenceGroupBodyBackgroundColor transparent
+    SequenceGroupBorderThickness 4
+    ' SequenceGroupBackgroundColor DarkOliveGreen
+    ' SequenceGroupBorderColor DarkOliveGreen
+    SequenceGroupBackgroundColor LightBlue
+    SequenceGroupBorderColor LightBlue
+    ' transparent
+    sequence {
+        ParticipantBackgroundColor WhiteSmoke
+        ParticipantBorderColor Gray
+        ParticipantFontStyle Bold
+        ParticipantFontSize 12
+        ParticipantPadding 0
+
+        LifeLineBorderColor DimGray
+        ArrowColor Black
+        ArrowThickness 0.8
+        ColorArrowSeparationSpace 30
+    }
+}
+
+participant PackageManagerShellCommand
+participant PackageReceiver
+participant PackageInstallerSession
+participant PackageManagerService
+participant VerificationParams
+participant InstallParams
+participant AppIntegrityManagerServiceImpl
+participant ApkLiteParseUtils
+participant ParsingPackageUtils
+participant ApkSignatureVerifier
+participant IInstalld
+
+' ->PackageHandler:SEND_PENDING_BROADCAST
+' ->PackageHandler:DEFERRED_NO_KILL_POST_DELETE
+' ->PackageHandler:DEFERRED_NO_KILL_INSTALL_OBSERVER
+' ->PackageHandler:WRITE_PACKAGE_RESTRICTIONS
+' ->PackageHandler:WRITE_PACKAGE_LIST
+' ->PackageHandler:CHECK_PENDING_VERIFICATION
+' ->PackageHandler:PACKAGE_VERIFIED
+' ->PackageHandler:INSTANT_APP_RESOLUTION_PHASE_TWO
+' ->PackageHandler:ENABLE_ROLLBACK_STATUS
+' ->PackageHandler:ENABLE_ROLLBACK_TIMEOUT
+' ->PackageHandler:DOMAIN_VERIFICATION
+' ->PackageHandler:SNAPSHOT_UNCORK
+
+
+->PackageManagerShellCommand:onCommand()
+note left:**"install"**
+activate PackageManagerShellCommand
+PackageManagerShellCommand->PackageManagerShellCommand:runInstall()
+activate PackageManagerShellCommand
+PackageManagerShellCommand->PackageManagerShellCommand:doRunInstall()
+activate PackageManagerShellCommand
+PackageManagerShellCommand-->PackageInstallerSession:commit()
+deactivate PackageManagerShellCommand
+deactivate PackageManagerShellCommand
+deactivate PackageManagerShellCommand
+
+activate PackageInstallerSession
+PackageInstallerSession->PackageInstallerSession:dispatchSessionSealed()
+activate PackageInstallerSession
+PackageInstallerSession-->PackageInstallerSession:MSG_ON_SESSION_SEALED
+PackageInstallerSession->PackageInstallerSession:handleSessionSealed()
+activate PackageInstallerSession
+PackageInstallerSession->PackageInstallerSession:dispatchStreamValidateAndCommit()
+activate PackageInstallerSession
+PackageInstallerSession-->PackageInstallerSession:MSG_STREAM_VALIDATE_AND_COMMIT
+PackageInstallerSession->PackageInstallerSession:handleStreamValidateAndCommit()
+activate PackageInstallerSession
+PackageInstallerSession->PackageInstallerSession:streamValidateAndCommit()
+activate PackageInstallerSession
+PackageInstallerSession->PackageInstallerSession:validateApkInstallLocked()
+PackageInstallerSession->ApkLiteParseUtils:parseApkLite()
+deactivate PackageInstallerSession
+activate ApkLiteParseUtils
+ApkLiteParseUtils->ApkLiteParseUtils:parseApkLiteInner()
+activate ApkLiteParseUtils
+ApkLiteParseUtils->ParsingPackageUtils:getSigningDetails()
+deactivate ApkLiteParseUtils
+deactivate ApkLiteParseUtils
+activate ParsingPackageUtils
+ParsingPackageUtils->ApkSignatureVerifier:verify()
+deactivate ParsingPackageUtils
+activate ApkSignatureVerifier
+ApkSignatureVerifier->ApkSignatureVerifier:verifySignatures()
+activate ApkSignatureVerifier
+ApkSignatureVerifier->ApkSignatureVerifier:verifySignaturesInternal()
+activate ApkSignatureVerifier
+ApkSignatureVerifier->ApkSignatureVerifier:verifyV3AndBelowSignatures()
+activate ApkSignatureVerifier
+ApkSignatureVerifier->ApkSignatureVerifier:verifyV2Signature()
+activate ApkSignatureVerifier
+ApkSignatureVerifier->ApkSignatureVerifier:ApkSignatureSchemeV2Verifier.verify()
+activate ApkSignatureVerifier
+deactivate ApkSignatureVerifier
+deactivate ApkSignatureVerifier
+deactivate ApkSignatureVerifier
+deactivate ApkSignatureVerifier
+deactivate ApkSignatureVerifier
+deactivate ApkSignatureVerifier
+
+PackageInstallerSession-->PackageInstallerSession:MSG_INSTALL
+activate PackageInstallerSession
+PackageInstallerSession->PackageInstallerSession:handleInstall()
+activate PackageInstallerSession
+PackageInstallerSession->PackageInstallerSession:verify()
+activate PackageInstallerSession
+PackageInstallerSession->PackageInstallerSession:verifyNonStaged()
+activate PackageInstallerSession
+PackageInstallerSession->PackageInstallerSession:prepareForVerification()
+activate PackageInstallerSession
+PackageInstallerSession->PackageInstallerSession:computeUserActionRequirement()
+activate PackageInstallerSession
+PackageInstallerSession->PackageManagerService:checkUidPermission()
+deactivate PackageInstallerSession
+deactivate PackageInstallerSession
+activate PackageManagerService
+PackageManagerService-->PermissionManagerServiceInternalImpl:checkUidPermission()
+note right:ComputerTracker.checkUidPermission()\n\
+ComputerEngine.checkUidPermission()\n\
+PermissionManagerServiceInternalImpl.checkUidPermission()
+deactivate PackageManagerService
+
+
+PackageInstallerSession->PackageManagerService:verifyStage()
+deactivate PackageInstallerSession
+deactivate PackageInstallerSession
+deactivate PackageInstallerSession
+deactivate PackageInstallerSession
+deactivate PackageInstallerSession
+deactivate PackageInstallerSession
+deactivate PackageInstallerSession
+deactivate PackageInstallerSession
+deactivate PackageInstallerSession
+activate PackageManagerService
+PackageManagerService->VerificationParams:startCopy()
+deactivate PackageManagerService
+activate VerificationParams
+VerificationParams->VerificationParams:handleStartCopy()
+activate VerificationParams
+VerificationParams->VerificationParams:sendApkVerificationRequest()
+activate VerificationParams
+VerificationParams->VerificationParams:sendIntegrityVerificationRequest()
+activate VerificationParams
+VerificationParams->VerificationParams:sendIntegrityVerificationRequest()
+activate VerificationParams
+VerificationParams-->AppIntegrityManagerServiceImpl:**post()**
+note left:**ACTION_PACKAGE_NEEDS_INTEGRITY_VERIFICATION**
+deactivate VerificationParams
+deactivate VerificationParams
+deactivate VerificationParams
+deactivate VerificationParams
+deactivate VerificationParams
+activate AppIntegrityManagerServiceImpl
+AppIntegrityManagerServiceImpl->AppIntegrityManagerServiceImpl:handleIntegrityVerification()
+activate AppIntegrityManagerServiceImpl
+AppIntegrityManagerServiceImpl->AppIntegrityManagerServiceImpl:getPackageArchiveInfo()
+activate AppIntegrityManagerServiceImpl
+AppIntegrityManagerServiceImpl->ParsingPackageUtils:parsePackage()
+note left:PackageParser2.parsePackage()\n\
+ParsingPackageUtils.parsePackage()
+deactivate AppIntegrityManagerServiceImpl
+activate ParsingPackageUtils
+ParsingPackageUtils->ParsingPackageUtils:parseClusterPackage()
+activate ParsingPackageUtils
+ParsingPackageUtils->ParsingPackageUtils:parseBaseApk()
+activate ParsingPackageUtils
+deactivate ParsingPackageUtils
+deactivate ParsingPackageUtils
+deactivate ParsingPackageUtils
+
+
+AppIntegrityManagerServiceImpl->PackageManagerService:setIntegrityVerificationResult()
+deactivate AppIntegrityManagerServiceImpl
+deactivate AppIntegrityManagerServiceImpl
+activate PackageManagerService
+PackageManagerService-->VerificationParams:handleIntegrityVerificationFinished()
+note left:**INTEGRITY_VERIFICATION_COMPLETE**
+deactivate PackageManagerService
+activate VerificationParams
+VerificationParams->VerificationParams:handleReturnCode()
+activate VerificationParams
+VerificationParams->VerificationParams:sendVerificationCompleteNotification()
+activate VerificationParams
+VerificationParams->PackageInstallerSession:onPackageInstalled()
+deactivate VerificationParams
+deactivate VerificationParams
+deactivate VerificationParams
+activate PackageInstallerSession
+PackageInstallerSession->PackageInstallerSession:install()
+activate PackageInstallerSession
+PackageInstallerSession->PackageInstallerSession:installNonStaged()
+activate PackageInstallerSession
+PackageInstallerSession->PackageManagerService:installStage()
+deactivate PackageInstallerSession
+deactivate PackageInstallerSession
+deactivate PackageInstallerSession
+activate PackageManagerService
+PackageManagerService-->InstallParams:startCopy()
+note left:**INIT_COPY**
+deactivate PackageManagerService
+activate InstallParams
+InstallParams->InstallParams:handleReturnCode()
+activate InstallParams
+InstallParams->InstallParams:processPendingInstall()
+activate InstallParams
+InstallParams->PackageManagerService:processInstallRequestsAsync()
+deactivate InstallParams
+deactivate InstallParams
+deactivate InstallParams
+activate PackageManagerService
+PackageManagerService-->PackageManagerService:installPackagesTracedLI()
+activate PackageManagerService
+PackageManagerService->PackageManagerService:installPackagesLI()
+activate PackageManagerService
+PackageManagerService->PackageManagerService:reconcilePackagesLocked()
+activate PackageManagerService
+PackageManagerService->PackageManagerService:verifySignatures()
+activate PackageManagerService
+deactivate PackageManagerService
+deactivate PackageManagerService
+
+PackageManagerService->PackageManagerService:executePostCommitSteps()
+activate PackageManagerService
+PackageManagerService->PackageManagerService:prepareAppDataAfterInstallLIF()
+activate PackageManagerService
+PackageManagerService->PackageManagerService:executeBatchLI()
+activate PackageManagerService
+PackageManagerService-->IInstalld:createAppDataBatched()
+
+PackageManagerService-->IInstalld:prepareAppProfile()
+note right:ArtManagerService.prepareAppProfiles()
+deactivate PackageManagerService
+deactivate PackageManagerService
+deactivate PackageManagerService
+
+PackageManagerService-->IInstalld:performDexOpt()
+note right:PackageDexOptimizer.performDexOpt()\n\
+PackageDexOptimizer.performDexOptLI()\n\
+PackageDexOptimizer.dexOptPath()\n\
+Installer.dexopt()\n\
+IInstalld.dexopt()
+deactivate PackageManagerService
+deactivate PackageManagerService
+PackageManagerService-->PackageManagerService:restoreAndPostInstall()
+note right:**post()**
+activate PackageManagerService
+PackageManagerService->PackageManagerService:performBackupManagerRestore()
+activate PackageManagerService
+PackageManagerService-->PackageManagerService:finishPackageInstall()
+note right:BackupManagerService.restoreAtInstallForUser()\n\
+BackupManagerService.restoreAtInstall()\n\
+PackageManagerService.finishPackageInstall()
+
+activate PackageManagerService
+
+PackageManagerService-->PackageManagerService:handlePackagePostInstall()
+note left:**POST_INSTALL**
+activate PackageManagerService
+PackageManagerService->PackageManagerService:sendPackageAddedForNewUsers()
+activate PackageManagerService
+PackageManagerService-->PackageReceiver:**broadcastIntent()**
+note left:**ACTION_PACKAGE_ADDED**
+activate PackageReceiver
+
+
+PackageManagerService->PackageManagerService:notifyInstallObserver()
+activate PackageManagerService
+PackageManagerService->PackageInstallerSession:onPackageInstalled()
+deactivate PackageManagerService
+deactivate PackageManagerService
+deactivate PackageManagerService
+deactivate PackageManagerService
+deactivate PackageManagerService
+deactivate PackageManagerService
+deactivate PackageManagerService
+deactivate PackageManagerService
+deactivate PackageManagerService
+activate PackageInstallerSession
+PackageInstallerSession->PackageInstallerSession:destroyInternal()
+activate PackageInstallerSession
+PackageInstallerSession-->IInstalld:rmPackageDir()
+deactivate PackageInstallerSession
+
+PackageInstallerSession->PackageInstallerSession:dispatchSessionFinished()
+activate PackageInstallerSession
+PackageInstallerSession->PackageInstallerSession:sendUpdateToRemoteStatusReceiver()
+activate PackageInstallerSession
+PackageInstallerSession-->PackageInstallerSession:MSG_ON_PACKAGE_INSTALLED
+activate PackageInstallerSession
+PackageInstallerSession->PackageInstallerSession:sendOnPackageInstalled()
+activate PackageInstallerSession
+deactivate PackageInstallerSession
+deactivate PackageInstallerSession
+deactivate PackageInstallerSession
+
+PackageInstallerSession->PackageManagerService:sendSessionCommitBroadcast()
+deactivate PackageInstallerSession
+deactivate PackageInstallerSession
+activate PackageManagerService
+<--PackageManagerService:**broadcastIntent()**
+note left:**SESSION_COMMITTED**
+deactivate PackageManagerService
+
+PackageReceiver->PackageReceiver:onPackageAdded()
+activate PackageReceiver
+PackageReceiver-->PackageManagerService:**broadcastIntent()**
+note left:OverlayManagerService.updateTargetPackagesLocked()\n\
+OverlayManagerService.broadcastActionOverlayChanged()\n\
+PackageManagerService.broadcastIntent()\n\
+**ACTION_OVERLAY_CHANGED**
+deactivate PackageReceiver
+deactivate PackageReceiver
+activate PackageManagerService
+PackageManagerService->PackageManagerService:sendPackageChangedBroadcast()
+activate PackageManagerService
+PackageManagerService->PackageManagerService:sendPackageBroadcast()
+activate PackageManagerService
+<--PackageManagerService:**broadcastIntent()**
+note left:**ACTION_PACKAGE_CHANGED**
+deactivate PackageManagerService
+deactivate PackageManagerService
+deactivate PackageManagerService
+
+
+' group ???
+' PackageManagerService-->VerificationParams:RET
+' note right:**ACTION_PACKAGE_NEEDS_INTEGRITY_VERIFICATION**
+' VerificationParams->PackageHandler:CHECK_PENDING_INTEGRITY_VERIFICATION
+' -->PackageHandler:WRITE_SETTINGS
+' end group

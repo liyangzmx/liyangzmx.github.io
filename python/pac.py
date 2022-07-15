@@ -84,5 +84,5 @@ if __name__ == '__main__':
   setGlobalPrintFullStrings(False)
   with open(sys.argv[1], "rb") as f:
     data = f.read(1024 * 1024)
-    bootimg = PacImage.parse(data)
-    print(bootimg)
+    img = qsb_img.parse(data)
+    print(img)

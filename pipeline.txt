@@ -1,0 +1,172 @@
+pipeline{
+  agent {
+    // 	label 'jenkins_161'
+    label 'master'
+  }
+  stages {
+    stage('Fetch') {
+      steps {
+        updateGitlabCommitStatus name: 'build', state: 'pending'
+        script {
+          if(params.clean_before) {
+            print '!!! 清除输出'
+            dir('xxx') {
+              sh 'rm -rf sstate-cache build-* out/target/product/'
+            }
+            if(params.clean_ws) {
+              cleanWs()
+            }
+            checkout(
+              [$class: 'RepoScm', 
+                currentBranch: true, 
+                depth: 1, 
+                jobs: 4, 
+                // cleanFirst: true,
+                resetFirst: true, 
+                forceSync: true, 
+                manifestBranch: "${params.branch}", 
+                manifestFile: 'default.xml', 
+                manifestRepositoryUrl: 'git@git.xxx.com:yyyy/XXX_repo.git', 
+                quiet: false, 
+                // repoBranch: 'v2.4', 
+                repoUrl: 'https://mirrors.tuna.tsinghua.edu.cn/git/git-repo'
+              ]
+            )
+          } else {
+            print '~~~ 不清除输出'
+            // sh 'export '
+            // sh 'ls ~/.ssh/'
+            // sh 'cat ~/.ssh/id_rsa.pub'
+            // sh 'ssh-keygen -t rsa -N "" -C "liyang@xxx.com" -f /var/lib/jenkins/.ssh/id_rsa'
+            // sh 'cat ~/.ssh/id_rsa'
+            checkout(
+              [$class: 'RepoScm', 
+                currentBranch: true, 
+                depth: 1, 
+                jobs: 4, 
+                resetFirst: true, 
+                forceSync: true, 
+                manifestBranch: "${params.branch}", 
+                manifestFile: 'default.xml', 
+                manifestRepositoryUrl: 'git@git.xxx.com:yyyy/XXX_repo.git', 
+                quiet: false, 
+                // repoBranch: 'v2.4', 
+                repoUrl: 'https://mirrors.tuna.tsinghua.edu.cn/git/git-repo'
+              ]
+            )
+          }
+        }
+      }
+    }
+    stage('Build'){
+      steps {
+        updateGitlabCommitStatus name: 'build', state: 'running'
+        dir('xxx') {
+          withDockerContainer('xshuoshuo/ubuntu:XXX') {
+            sh """#!/bin/bash
+            cp -rvf  vendor/sprd/release/IDH/zzz-debug-${params.build_variant}-native/* ./
+            MACHINE=sl8541e-3in1 DISTRO=xxx-wayland source setup-environment
+            bitbake -c cleansstate linux-xxx-4.14 u-boot15 connman rilutils ofono AAAlibs
+            cd ..
+            ./build.sh zzz-debug ${params.build_variant} ota
+            """
+          }
+        }
+      }
+    }
+    stage('OTA Generate') {
+      steps {
+        dir('xxx') {
+          withDockerContainer('liyangzmx/AAA-newhw_ubuntu-boinic:v0.0.13'){
+            sh """#!/bin/bash
+            ./build.sh zzz-debug default ota
+            """
+          }
+        }
+        updateGitlabCommitStatus name: 'build', state: 'success'
+      }
+    }
+  }
+  post {
+    success {
+      script {
+        jira_comment()
+        if(params.dingtalk_notification) {
+          sh """#!/bin/bash
+
+          curl \"https://oapi.dingtalk.com/robot/send?access_token=${params.dingtalk_token}\" -H \'Content-Type: application/json\' -d \"{\\"msgtype\\": \\"link\\", \\"link\\": {\\"title\\": \\"编译通知: 构建 - XXX - 成功\\", \\"picUrl\\": \\"\\",  \\"text\\": \\"点击查看构建\\", \\"messageUrl\\": \\"${BUILD_URL}\\"}}\"
+          """
+        }
+      }
+      archiveArtifacts artifacts: 'xxx/out/target/product/sl8541e-3in1/**', followSymlinks: false
+    }
+    failure {
+      script {
+        // new_error_jira()
+        updateGitlabCommitStatus name: 'build', state: 'failed'
+        if(params.dingtalk_notification) {
+          sh """#!/bin/bash
+
+          curl \"https://oapi.dingtalk.com/robot/send?access_token=${params.dingtalk_token}\" -H \'Content-Type: application/json\' -d \"{\\"msgtype\\": \\"link\\", \\"link\\": {\\"title\\": \\"编译通知: 构建 - XXX - 失败\\", \\"picUrl\\": \\"\\",  \\"text\\": \\"点击查看构建\\", \\"messageUrl\\": \\"${BUILD_URL}\\"}}\"
+          """
+        }
+      }
+    }
+    aborted{
+      updateGitlabCommitStatus name: 'build', state: 'canceled'
+      script {
+        if(params.dingtalk_notification) {
+        sh """#!/bin/bash
+
+        curl \"https://oapi.dingtalk.com/robot/send?access_token=${params.dingtalk_token}\" -H \'Content-Type: application/json\' -d \"{\\"msgtype\\": \\"link\\", \\"link\\": {\\"title\\": \\"编译通知: 构建 - XXX - 中止\\", \\"picUrl\\": \\"\\",  \\"text\\": \\"点击查看构建\\", \\"messageUrl\\": \\"${BUILD_URL}\\"}}\"
+        """
+        }
+      }
+    }
+  }
+}
+
+@NonCPS
+def jira_comment()
+{
+  def issue_pattern = "XXX-\\d+"
+
+  currentBuild.changeSets.each {  changeSet ->
+  changeSet.each { commit ->
+    String msg = commit.getCommitText()
+    echo "msg: " + msg
+    String cmt_author = commit.getAuthorName()
+
+    msg.findAll(issue_pattern).each {
+      id -> jiraAddComment idOrKey: "${id}", comment: "Patch Info:\n------------------------------------------------\nAuthor: ${cmt_author}\nCommit Message: ${msg}\nOutput On Jenkins: [ROM下载地址|${BUILD_URL}/artifact/xxx/out/target/product/sl8541e-3in1/cp_sign/sl8541e_sec_board/]", site: 'AAA-JIRA'
+    }
+    }
+  }
+}
+
+def new_error_jira()
+{
+  def testIssue = [
+    fields: [
+      project: [key: 'XXX'],
+      summary: "[Jenkins] 构建: ${JOB_NAME} - ${BUILD_NUMBER} 编译失败",
+      description: "该JIRA是Jenkins自动生成并提交的\n你也可以通过: ${BUILD_URL}consoleText 获取具体的log.\n",
+      customfield_11178: [id: '13461'], 
+      assignee: [name: 'liyang'], 
+      customfield_10013: [name: 'liyang'], 
+      customfield_10223: [value:'创新产品'], 
+      issuetype: [id: '1']
+    ]
+  ]
+
+  try {
+    response = jiraNewIssue issue: testIssue, site: 'AAA-JIRA'
+  } catch(Exception e){
+    print 'exception' + e
+  }
+
+  print response.successful.toString()
+  print response.data.toString()
+
+  print "JIRA ID: " + response.data.key
+}

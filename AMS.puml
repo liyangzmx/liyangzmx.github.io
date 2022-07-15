@@ -1,0 +1,35 @@
+@startuml AMS
+
+skinparam {
+    monochrome true
+    ClassBorderColor white
+    ClassBackgroundColor white
+    Shadowing false
+}
+
+IActivityTaskManager <|-- ActivityTaskManagerService
+ActivityTaskManagerService o-- WindowManagerService:mWindowManager
+ActivityTaskManagerService o-- ActivityStartController:mActivityStartController
+ActivityStartController ..> ActivityStarter:obtainStarter()
+ActivityTaskManagerService ..> ActivityStarter:execute()
+ActivityStarter o-- RootWindowContainer:mRootWindowContainer
+RootWindowContainer o-- WindowManagerService:mWindowManager
+ActivityStarter o-- Task:mTargetRootTask
+ActivityStarter o-- ActivityRecord:mStartActivity
+ActivityStarter o-- Request:mRequest
+ActivityStarter ..> ActivityRecord:build()
+RootWindowContainer ..> Task:resumeTopActivityUncheckedLocked()
+Task ..> TaskFragment:resumeTopActivity()
+ActivityRecord o-- WindowContainer:mParent
+WindowContainer <|-- TaskFragment
+
+class "ActivityTaskManagerService" as ActivityTaskManagerService2
+TaskFragment o-- ActivityTaskManagerService2:mAtmService
+ActivityTaskManagerService2 ..> LocalService:startProcess()
+note on link:Invoke
+LocalService ..> ActivityManagerService:startProcessLocked()
+ActivityManagerService o-- ProcessList:mProcessList
+ProcessList o-- ActivityManagerService:mService
+ProcessList ..> Process:start()
+
+@enduml

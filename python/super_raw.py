@@ -3,6 +3,47 @@
 from construct import *
 import sys
 
+SPARSE_HEADER = Struct(
+    "magic" / Hex(Const(0xed26ff3a, Int32ul)),
+    "major_version" / Int16ul,
+    "minor_version" / Int16ul,
+    "file_header_size" / Int16ul,
+    "chunk_header_size" / Int16ul,
+    "block_size" / Int32ul,
+    "total_blocks" / Int32ul,
+    "total_chunks" / Int32ul,
+    "image_checksum" / Int32ul
+)
+
+CHUNK_HEADER = Struct(
+    "chunk_type" / Enum(Int16ul,
+        RAW = 0xCAC1,
+        FILL = 0xCAC2,
+        DONT_CARE = 0xCAC3,
+        CRC = 0xCAC4
+    ),
+    Int16ul,                # reserved1
+    "chunk_size" / Int32ul,
+    "total_size" / Int32ul
+)
+
+CHUNK = Struct(
+    "header" / RawCopy(CHUNK_HEADER),
+    "data" / Switch(this.header.value.chunk_type,
+            {
+                "RAW": Bytes(this.header.value.total_size - CHUNK_HEADER.sizeof()),
+                "FILL": Int32ul,
+                "DONT_CARE": Bytes(0),
+                "CRC": Hex(Int32ul)
+            }
+        )
+)
+
+SPARSE = Struct(
+    "header" / RawCopy(SPARSE_HEADER),
+    "chunks" / GreedyRange(CHUNK)
+)
+
 # size
 LP_PARTITION_RESERVED_BYTES = 4096
 LP_METADATA_GEOMETRY_SIZE = 4096
@@ -171,7 +212,7 @@ LpMetaData = Struct(
 )
 
 LpMetaLayout = Struct(
-    Bytes(LP_PARTITION_RESERVED_BYTES),
+    # Bytes(LP_PARTITION_RESERVED_BYTES),
     "gemometry" / Padded(LP_METADATA_GEOMETRY_SIZE, LpMetadataGeometry),
     "gemometry_backup" / Padded(LP_METADATA_GEOMETRY_SIZE, LpMetadataGeometry),
     # "metadata" / Padded(this.gemometry.metadata_max_size, LpMetaData),
@@ -182,12 +223,36 @@ LpMetaLayout = Struct(
     "metadata_backup" / Array(this.gemometry_backup.metadata_slot_count, Padded(this.gemometry_backup.metadata_max_size, LpMetaData)),
 )
 
+def parse_gemometry(gemometry_data):
+    gemometry = LpMetadataGeometry.parse(gemometry_data)
+    return gemometry
+
+LP_SECTOR_SIZE = 512
+
 def parse_metadata(filename):
     with open(filename, 'rb') as f:
-        data = f.read(0x300000)
-        meta = LpMetaLayout.parse(data)
-        print(meta)
+        f.seek(LP_PARTITION_RESERVED_BYTES)
+        gemometry = LpMetadataGeometry.parse(f.read(LP_METADATA_GEOMETRY_SIZE))
+        gemometry_backup = LpMetadataGeometry.parse(f.read(LP_METADATA_GEOMETRY_SIZE))
+        # for i in range(gemometry.metadata_slot_count):
+        # only parse first
+        metadata = f.read(gemometry.metadata_max_size)
+        meta = LpMetaData.parse(metadata)
+        # LpMetadataPartition
+        for partition in meta.partitions:
+            if(partition.num_extents > 0):
+                if (partition.name == 'vendor_a'):
+                    # LpMetadataExtent
+                    extent = partition.extents[0]
+                    print("extent:", extent)
+                    f.seek(extent.target_data * LP_SECTOR_SIZE)
+                    data = f.read(extent.num_sectors * LP_SECTOR_SIZE)
+                    with open("vendor.img", "wb") as output:
+                        output.write(data)
+                    output.close()
 
+        # meta = LpMetaLayout.parse(meta_layout)
+    f.close()
 
 if __name__ == "__main__":
     parse_metadata(sys.argv[1])

@@ -1,0 +1,224 @@
+@startuml SailfishOS_NFC
+
+skinparam {
+    ' monochrome true
+    ClassBorderColor grey
+    ClassBackgroundColor white
+    Shadowing false
+    ' Linetype ortho
+    ' Linetype polyline
+}
+
+' left to right direction
+
+hide empty members
+set namespaceSeparator none
+
+class NfcTargetRequest
+interface NfcTargetRequestType {
+    nfc_target_transmit_request_submit()
+    nfc_target_transmit_request_cancel()
+    nfc_target_transmit_request_abandon()
+    nfc_target_transmit_request_timeout_ms()
+    nfc_target_transmit_request_done()
+    nfc_target_transmit_request_failed()
+    nfc_target_transmit_request_timed_out()
+    nfc_target_transmit_request_failed()
+    nfc_target_transmit_request_free()
+}
+
+class NfcTargetRequestQueue
+class NfcTarget {
+    nci_target_finalize()
+    nci_target_deactivate()
+    nci_target_transmit()
+    nci_target_cancel_transmit()
+    nci_target_gone()
+    nci_target_reactivate()
+}
+
+class NfcTagType2
+' class NfcTagType2Cmd
+' class NfcTagType2ReadData
+' class NfcTagType2WriteData
+' class NfcTagType2Sector
+class NfcTag
+class NfcNdefRec
+
+class BinderNfcAdapter
+class NfcAdapter {
+    nci_adapter_nci_intf_activated()
+    nci_adapter_nci_next_state_changed()
+    nci_adapter_nci_current_state_changed()
+}
+class NciAdapter
+class NciHalIo
+interface NciHalIoFunctions {
+    binder_nfc_adapter_hal_io_start()
+    binder_nfc_adapter_hal_io_stop()
+    binder_nfc_adapter_hal_io_write()
+    binder_nfc_adapter_hal_io_cancel_write()
+}
+class NciHalClient
+
+interface NciHalClientFunctions {
+    nci_sar_hal_client_error()
+    nci_sar_hal_client_read()
+}
+
+class GBinderServiceManager
+class GBinderClient
+class GBinderRemoteObject
+
+GBinderServiceManager -[hidden]->GBinderClient
+' GBinderClient -[hidden]->GBinderRemoteObject
+' GBinderRemoteObject -[hidden]->GBinderServiceManager
+
+class NciCoreObject
+class NciCore
+class NciSmIo {
+    nci_core_io_send()
+    nci_core_io_cancel()
+}
+class NciSm
+interface NciSarClientFunctions {
+    nci_core_sar_error()
+    nci_core_sar_handle_response()
+    nci_core_sar_handle_notification()
+    nci_core_sar_handle_data_packet()
+}
+class NciSar
+class NciSarClient
+
+class NciSmObject {
+    nci_sm_send_command()
+}
+class NciSmSwitch
+' class NciTransition
+' class NciState
+class NciStateDiscovery
+' class NciStateListenActive
+' class NciStateListenSleep
+class NciStatePollActive
+class NciStateW4AllDiscoveries
+class NciStateW4HostSelect
+
+class DBusServiceAdapter
+class DBusServiceTagType2
+class DBusServiceTag
+
+class NfcManager
+class BinderNfcPluginEntry
+
+class BinderNfcPlugin {
+    binder_nfc_plugin_finalize()
+    binder_nfc_plugin_start()
+    binder_nfc_plugin_stop()
+}
+class NfcPlugin
+class NfcPluginsInfo
+class NfcPluginDesc
+
+NfcTargetRequestType .[bold].> NfcTarget:CALL
+NfcTarget .[#Blue].> NciHalIoFunctions:CALL
+NciHalIoFunctions .[#Blue].> NciSarClientFunctions:CALL
+NciSarClientFunctions .[#Blue].> NciHalClientFunctions:CALL
+
+DBusServiceAdapter ..> DBusServiceTag:dbus_service_tag_new()
+
+' DBusServiceTag ..> DBusServiceTag:priv.pub
+DBusServiceTagType2 o-- DBusServiceTag:owner
+DBusServiceTag o-- NfcTagType2:t2
+NfcTagType2Cmd o-- NfcTagType2:t2
+NfcTagType2ReadData o-- NfcTagType2:t2
+NfcTagType2WriteData o-- NfcTagType2:t2
+NfcTagType2 *-- NfcTag:tag
+NfcTagType2 o-- NfcTagType2Sector:priv.sectors
+
+NfcTag o-- NfcTarget:target
+NfcTag o-- NfcNdefRec:ndef
+
+NfcTarget o-- NfcAdapter:adapter
+NfcTarget *-- NfcTargetRequestQueue:priv.req_queue
+NfcTargetRequestQueue o-- NfcTargetRequest:first
+NfcTargetRequest o-- NfcTargetRequestType:type
+
+
+NfcManager o-- NfcPlugin:priv.plugins
+
+NfcPluginsInfo o-- NfcPluginDesc
+NfcPluginDesc ..> BinderNfcPlugin:nfc_plugins_create_plugin
+BinderNfcPlugin o-- NfcManager:manager
+BinderNfcPlugin --|> NfcPlugin
+BinderNfcPlugin o-- BinderNfcPluginEntry:adapters
+BinderNfcPluginEntry o-- NfcAdapter:adapter
+
+BinderNfcPlugin o-- GBinderServiceManager:sm
+' BinderNfcPlugin ..> BinderNfcAdapter:binder_nfc_plugin_add_adapter()
+' GBinderServiceManager ...> GBinderRemoteObject:gbinder_servicemanager_get_service_sync()
+BinderNfcAdapter *-- NciAdapter:adapter
+BinderNfcAdapter o-- GBinderRemoteObject:remote
+' GBinderRemoteObject ..> GBinderClient:gbinder_client_new()
+BinderNfcAdapter o-- GBinderClient:client
+' BinderNfcAdapter ..> GBinderClient:gbinder_client_transact()
+BinderNfcAdapter *-- NciHalIo:hal_io
+NciHalIo o-- NciHalIoFunctions:fn
+BinderNfcAdapter o-- NciHalClient:hal_client
+NciHalClient o-- NciHalClientFunctions:fn
+
+
+NciAdapter *-- NfcAdapter:parent
+NciAdapter o-- NfcTarget:target
+NfcAdapter o-- NciCore:nci
+' NfcAdapter ..> NciCoreObject:nci_core_new()
+NciCoreObject *-- NciCore:core
+NciCoreObject *-- NciSarClient:sar_client
+NciSarClient o-- NciSarClientFunctions:fn
+NciCoreObject *-- NciSmIo:io
+NciCoreObject o-- NciSm:sm
+' NciSm ..> NciSar:nci_sm_sar()
+NciSar *-- NciHalClient:hal_client
+NciSar o-- NciHalIo:io
+NciSar o-- NciSarClient:client
+' NciSar o-- NciSarPacketOut:writing
+' NciSar o-- NciSarPacketOutQueue:cmd
+' NciSar o-- NciSarLogicalConnection:conn
+
+NciSmObject *-- NciSm:sm
+' NciSmObject o-- NciTransition:reset_transition
+' NciSmObject o-- NciState:active_state
+
+NciSmSwitch o-- NciSmObject:obj
+NciSmSwitch o-- NciStateDiscovery:state
+' NciStateDiscovery --|> NciState
+' NciStatePollActive --|> NciState
+' NciStatePollActive --|> NciState
+' NciStateW4AllDiscoveries --|> NciState
+' NciStateListenSleep --|> NciState
+' NciStateW4HostSelect --|> NciState
+
+
+class NciStateDiscovery {
+    nci_state_discovery_enter()
+    nci_state_discovery_reenter()
+    nci_state_discovery_handle_ntf()
+}
+
+class NciStatePollActive {
+    nci_state_poll_active_handle_ntf()
+}
+
+' NciStateDiscovery *-[#red]-> NciStatePollActive:<font color=red>**NCI_OID_RF_INTF_ACTIVATED**
+' NciStateDiscovery *--> NciStateListenActive
+NciStateDiscovery *-[#red]-> NciStateW4AllDiscoveries:<font color=red>**NCI_GID_RF**
+' NciStateListenActive *--> NciStateListenSleep
+' NciStateListenSleep *-[#red]-> NciStateListenActive:<font color=red>**NCI_OID_RF_INTF_ACTIVATED**
+' NciStateListenActive *--> NciStateDiscovery
+' NciStateW4AllDiscoveries *--> NciStatePollActive
+NciStateW4AllDiscoveries *-[#red]-> NciStateW4HostSelect:<font color=red>**NCI_OID_RF_DISCOVER**
+NciStateW4HostSelect *-[#red]-> NciStatePollActive:<font color=red>**NCI_OID_RF_INTF_ACTIVATED**
+
+' NciStateDiscovery ..> NfcAdapter:SIGNAL_INTF_ACTIVATED
+' NfcAdapter ..> NfcTag:nfc_adapter_add_other_tag2()
+
+' NciSarClientFunctions ..> NciSm:nci_sm_handle_ntf()

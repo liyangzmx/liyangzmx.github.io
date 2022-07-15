@@ -1,0 +1,42 @@
+@startuml startActivity
+
+skinparam {
+    monochrome true
+    ClassBorderColor white
+    ClassBackgroundColor white
+    Shadowing false
+}
+
+hide empty members
+set namespaceSeparator none
+
+interface IActivityTaskManager
+
+'''''''''' define
+class ActivityTaskManagerService {
+    startActivity()
+    startActivityAsUser()
+
+    startProcessAsync()
+}
+
+class ActivityStarter {
+    execute()
+    executeRequest()
+    startActivityUnchecked()
+    startActivityInner()
+}
+Task : startActivityLocked()
+
+'''''''''' connect
+Activity o-- Instrumentation:mInstrumentation
+Instrumentation..>ActivityTaskManager:getService
+ActivityTaskManager ..> IActivityTaskManager:RET
+Instrumentation ..> IActivityTaskManager:startActivity()
+IActivityTaskManager <|-- ActivityTaskManagerService
+ActivityTaskManagerService ..> ActivityStartController:getActivityStartController()
+ActivityStartController ..> ActivityStarter:obtainStarter()
+ActivityTaskManagerService ..> ActivityStarter:execute()
+ActivityStarter o-- Task: mTargetRootTask
+ActivityStarter ..> ActivityTaskSupervisor:startSpecificActivity()
+ActivityTaskSupervisor o-- ActivityTaskManagerService:mService 

@@ -1,0 +1,286 @@
+@startuml install flow
+ 
+hide footbox
+skinparam {
+    ' defaultFontName Abyssinica SIL
+    Shadowing false  
+    backgroundColor white
+    NoteFontColor #Black
+    NoteFontSize 16
+    NoteTextAlignment left
+    NoteBackgroundColor WhiteSmoke
+    NoteColor transparent
+    NoteBorderThickness 0
+    NoteBorderColor transparent
+    NoteBorderThickness 0
+    NoteShadowing false
+    ParticipantPadding 0
+    BoxPadding 20
+    dpi 96
+    ClassBackgroundColor transparent
+    ClassHeaderBackgroundColor lightBlue
+    ClassStereotypeFontColor transparent
+    SequenceBoxBordercolor sienna
+    SequenceBoxFontSize 24
+    SequenceBoxFontColor Black
+    SequenceBoxBackgroundColor WhiteSmoke
+    SequenceLifeLineBackgroundColor WhiteSmoke
+    SequenceMessageAlignment center
+    SequenceGroupHeaderFontColor White
+    SequenceGroupHeaderFontSize 20
+    SequenceGroupBodyBackgroundColor transparent
+    SequenceGroupBorderThickness 4
+    ' SequenceGroupBackgroundColor DarkOliveGreen
+    ' SequenceGroupBorderColor DarkOliveGreen
+    SequenceGroupBackgroundColor LightBlue
+    SequenceGroupBorderColor LightBlue
+    ' transparent
+    sequence {
+        ParticipantBackgroundColor WhiteSmoke
+        ParticipantBorderColor Gray
+        ParticipantFontStyle Bold
+        ParticipantFontSize 12
+        ParticipantPadding 0
+
+        LifeLineBorderColor DimGray
+        ArrowColor Black
+        ArrowThickness 0.8
+        ColorArrowSeparationSpace 30
+    }
+}
+
+box com.android.documentsui
+participant ActionHandler
+end box
+
+box com.android.media
+participant TrampolineActivity
+participant OpenHelper
+end box
+
+box packageinstaller
+participant "[Activity]\nInstallStart" as InstallStart
+participant "[AlertActivity]\nInstallStaging" as InstallStaging
+' participant StagingAsyncTask
+participant "[Activity]\nDeleteStagedFileOnResult" as DeleteStagedFileOnResult
+participant "[AlertActivity]\nPackageInstallerActivity" as PackageInstallerActivity
+participant "[AlertActivity]\nInstallInstalling" as InstallInstalling
+participant "[AsyncTask]\nInstallingAsyncTask" as InstallingAsyncTask
+end box
+
+box system_process
+participant "[ShellCommand]\nPackageManagerShellCommand" as PackageManagerShellCommand
+participant "[IPackageInstallerSession]\nPackageInstallerSession" as PackageInstallerSession
+participant "[IPackageManager]\nPackageManagerService" as PackageManagerService
+participant "[HandlerParams]\nVerificationParams" as VerificationParams
+participant "[IAppIntegrityManager]\nAppIntegrityManagerServiceImpl" as AppIntegrityManagerServiceImpl
+participant "[HandlerParams]\nInstallParams" as InstallParams
+participant "Installer.Batch" as Batch
+participant Installer
+participant Settings
+end box
+
+box installd
+participant IInstalld
+end box
+
+->ActionHandler:openDocument()
+activate ActionHandler
+ActionHandler->ActionHandler:onDocumentOpened()
+activate ActionHandler
+ActionHandler-->TrampolineActivity:onCreate()
+deactivate ActionHandler
+deactivate ActionHandler
+activate TrampolineActivity
+TrampolineActivity-->OpenHelper:startViewIntent()
+deactivate TrampolineActivity
+activate OpenHelper
+OpenHelper-->InstallStart:startActivityAsUser()
+deactivate OpenHelper
+activate InstallStart
+InstallStart --> InstallStaging:onResume()
+note left:startActivity()
+deactivate InstallStart
+activate InstallStaging
+
+' InstallStaging->StagingAsyncTask:execute()
+' activate StagingAsyncTask
+InstallStaging-->DeleteStagedFileOnResult:startActivity()
+note left: BY: **StagingAsyncTask**
+deactivate InstallStaging
+' deactivate StagingAsyncTask
+activate DeleteStagedFileOnResult
+DeleteStagedFileOnResult-->PackageInstallerActivity:startActivityForResult()
+deactivate DeleteStagedFileOnResult
+
+activate PackageInstallerActivity
+PackageInstallerActivity-->InstallInstalling:onResume()
+note left: click: "安装"
+deactivate PackageInstallerActivity
+activate InstallInstalling
+
+InstallInstalling-->InstallingAsyncTask:MESSAGE_POST_RESULT
+deactivate InstallInstalling
+activate InstallingAsyncTask
+InstallingAsyncTask->InstallingAsyncTask:finish()
+activate InstallingAsyncTask
+InstallingAsyncTask->InstallingAsyncTask:onPostExecute()
+activate InstallingAsyncTask
+create PackageInstallerSession
+InstallingAsyncTask-->PackageInstallerSession:commit()
+deactivate InstallingAsyncTask
+deactivate InstallingAsyncTask
+deactivate InstallingAsyncTask
+activate PackageInstallerSession
+
+
+->PackageManagerShellCommand:onCommand()
+activate PackageManagerShellCommand
+PackageManagerShellCommand->PackageManagerShellCommand:runInstall()
+note left:**"install"**
+activate PackageManagerShellCommand
+PackageManagerShellCommand->PackageManagerShellCommand:doRunInstall()
+activate PackageManagerShellCommand
+PackageManagerShellCommand->PackageManagerShellCommand:doCommitSession()
+activate PackageManagerShellCommand
+PackageManagerShellCommand->PackageInstallerSession:commit()
+note left:BY **Session.commit()**
+deactivate PackageManagerShellCommand
+deactivate PackageManagerShellCommand
+deactivate PackageManagerShellCommand
+deactivate PackageManagerShellCommand
+
+
+PackageInstallerSession->PackageInstallerSession:dispatchSessionSealed()
+activate PackageInstallerSession
+PackageInstallerSession-->PackageInstallerSession:**MSG_ON_SESSION_SEALED**
+PackageInstallerSession->PackageInstallerSession:handleSessionSealed()
+activate PackageInstallerSession
+PackageInstallerSession-->PackageInstallerSession:**MSG_STREAM_VALIDATE_AND_COMMIT**
+deactivate PackageInstallerSession
+PackageInstallerSession->PackageInstallerSession:handleStreamValidateAndCommit()
+activate PackageInstallerSession
+PackageInstallerSession-->PackageInstallerSession:**MSG_INSTALL**
+deactivate PackageInstallerSession
+PackageInstallerSession->PackageInstallerSession:handleInstall()
+activate PackageInstallerSession
+PackageInstallerSession->PackageInstallerSession:verify()
+activate PackageInstallerSession
+PackageInstallerSession->PackageInstallerSession:verifyNonStaged()
+activate PackageInstallerSession
+
+=== Verify Stage ==
+PackageInstallerSession->PackageManagerService:verifyStage()
+note over PackageManagerService:<font color=grey>**PackageManagerService**
+deactivate PackageInstallerSession
+deactivate PackageInstallerSession
+deactivate PackageInstallerSession
+deactivate PackageInstallerSession
+deactivate PackageInstallerSession
+activate PackageManagerService
+PackageManagerService-->VerificationParams:startCopy()
+note over VerificationParams:<font color=grey>**VerificationParams**
+deactivate PackageManagerService
+activate VerificationParams
+VerificationParams->VerificationParams:handleStartCopy()
+VerificationParams->VerificationParams:handleReturnCode()
+activate VerificationParams
+VerificationParams->VerificationParams:sendVerificationCompleteNotification()
+activate VerificationParams
+VerificationParams-->PackageInstallerSession:onPackageInstalled()
+deactivate VerificationParams
+deactivate VerificationParams
+deactivate VerificationParams
+activate PackageInstallerSession
+PackageInstallerSession->PackageInstallerSession:onVerificationComplete()
+activate PackageInstallerSession
+PackageInstallerSession->PackageInstallerSession:install()
+activate PackageInstallerSession
+=== Install Stage ==
+PackageInstallerSession->PackageManagerService:installStage()
+deactivate PackageInstallerSession
+deactivate PackageInstallerSession
+deactivate PackageInstallerSession
+activate PackageManagerService
+PackageManagerService->VerificationParams:startCopy()
+deactivate PackageManagerService
+note left:**INIT_COPY**
+activate VerificationParams
+VerificationParams->VerificationParams:handleStartCopy()
+activate VerificationParams
+VerificationParams->VerificationParams:sendApkVerificationRequest()
+activate VerificationParams
+VerificationParams->VerificationParams:sendIntegrityVerificationRequest()
+activate VerificationParams
+VerificationParams-->AppIntegrityManagerServiceImpl:ACTION_PACKAGE_NEEDS_INTEGRITY_VERIFICATION
+note over AppIntegrityManagerServiceImpl:<font color=grey>**AppIntegrityManagerServiceImpl**
+deactivate VerificationParams
+deactivate VerificationParams
+deactivate VerificationParams
+deactivate VerificationParams
+deactivate VerificationParams
+
+activate AppIntegrityManagerServiceImpl
+AppIntegrityManagerServiceImpl-->AppIntegrityManagerServiceImpl:handleIntegrityVerification()
+note left:**Handler**
+activate AppIntegrityManagerServiceImpl
+AppIntegrityManagerServiceImpl-->PackageManagerService:INTEGRITY_VERIFICATION_COMPLETE()
+note left:BY **PackageManagerInternal**
+deactivate AppIntegrityManagerServiceImpl
+deactivate AppIntegrityManagerServiceImpl
+activate PackageManagerService
+PackageManagerService->InstallParams:handleIntegrityVerificationFinished()
+note over InstallParams:<font color=grey>**InstallParams**
+deactivate PackageManagerService
+activate InstallParams
+InstallParams->InstallParams:handleReturnCode()
+activate InstallParams
+InstallParams->InstallParams:processPendingInstall()
+activate InstallParams
+InstallParams-->PackageManagerService:processInstallRequestsAsync()
+note over PackageManagerService:<font color=grey>**PackageManagerService**
+deactivate InstallParams
+deactivate InstallParams
+deactivate InstallParams
+
+activate PackageManagerService
+PackageManagerService->PackageManagerService:installPackagesTracedLI()
+activate PackageManagerService
+PackageManagerService->PackageManagerService:installPackagesLI()
+activate PackageManagerService
+PackageManagerService->PackageManagerService:commitPackagesLocked()
+activate PackageManagerService
+PackageManagerService->PackageManagerService:updateSettingsLI()
+activate PackageManagerService
+PackageManagerService->PackageManagerService:updateSettingsInternalLI()
+activate PackageManagerService
+PackageManagerService->PackageManagerService:writeSettingsLPrTEMP()
+activate PackageManagerService
+PackageManagerService->Settings:writeLPr()
+deactivate PackageManagerService
+deactivate PackageManagerService
+deactivate PackageManagerService
+deactivate PackageManagerService
+
+
+PackageManagerService->PackageManagerService:executePostCommitSteps()
+activate PackageManagerService
+PackageManagerService->PackageManagerService:prepareAppDataAfterInstallLIF()
+activate PackageManagerService
+PackageManagerService->PackageManagerService:executeBatchLI()
+activate PackageManagerService
+PackageManagerService->Batch:execute()
+deactivate PackageManagerService
+deactivate PackageManagerService
+deactivate PackageManagerService
+deactivate PackageManagerService
+deactivate PackageManagerService
+deactivate PackageManagerService
+activate Batch
+note over Batch:<font color=grey>**Installer.Batch**
+Batch->Installer:createAppDataBatched()
+deactivate Batch
+activate Installer
+note over Installer:<font color=grey>**Installer**
+Installer-->IInstalld:createAppDataBatched()
+deactivate Installer

@@ -1,0 +1,136 @@
+@startuml NFC_Flow
+
+hide footbox
+skinparam {
+    ' defaultFontName Abyssinica SIL
+    Shadowing false
+    backgroundColor white
+    NoteFontColor #Black
+    NoteFontSize 16
+    NoteTextAlignment right
+    NoteBackgroundColor WhiteSmoke
+    NoteColor transparent
+    NoteBorderThickness 0
+    NoteBorderColor transparent
+    NoteBorderThickness 0
+    NoteShadowing false
+    ParticipantPadding 0
+    BoxPadding 20
+    dpi 96
+    ClassBackgroundColor transparent
+    ClassHeaderBackgroundColor lightgreen
+    ClassStereotypeFontColor transparent
+    SequenceBoxBordercolor WhiteSmoke
+    SequenceBoxFontSize 24
+    SequenceBoxFontColor Black
+    SequenceBoxBackgroundColor WhiteSmoke
+    SequenceLifeLineBackgroundColor WhiteSmoke
+    SequenceMessageAlignment center
+    SequenceGroupHeaderFontColor White
+    SequenceGroupHeaderFontSize 20
+    SequenceGroupBackgroundColor DarkOliveGreen
+    SequenceGroupBodyBackgroundColor transparent
+    SequenceGroupBorderThickness 4
+    SequenceGroupBorderColor DarkOliveGreen
+    ' transparent
+    sequence {
+        ParticipantBackgroundColor WhiteSmoke
+        ParticipantBorderColor Gray
+        ParticipantFontStyle Bold
+        ParticipantFontSize 12
+        ParticipantPadding 0
+
+        LifeLineBorderColor DimGray
+        ArrowColor Black
+        ArrowThickness 0.8
+        ColorArrowSeparationSpace 30
+    }
+}
+
+->NfcDispatcher:dispatchTag()
+' deactivate NfcService
+' deactivate NfcService
+' deactivate NfcService
+activate NfcDispatcher
+
+NfcDispatcher->NfcDispatcher:tryOverrides()
+activate NfcDispatcher
+deactivate NfcDispatcher
+
+NfcDispatcher->NfcDispatcher:tryPeripheralHandover()
+activate NfcDispatcher
+NfcDispatcher->NfcDispatcher:HandoverDataParser.parseBluetooth()
+note right:TNF_MIME_MEDIA == **<font color=blue>"application/vnd.bluetooth.ep.oob"**
+create PeripheralHandoverService
+NfcDispatcher-->PeripheralHandoverService:onStartCommand()
+deactivate NfcDispatcher
+
+
+activate PeripheralHandoverService
+PeripheralHandoverService->PeripheralHandoverService:doPeripheralHandover()
+activate PeripheralHandoverService
+create BluetoothPeripheralHandover
+PeripheralHandoverService->BluetoothPeripheralHandover:start()
+deactivate PeripheralHandoverService
+deactivate PeripheralHandoverService
+activate BluetoothPeripheralHandover
+
+' ->InnerConnection:connected()
+' note right:IServiceConnection
+' InnerConnection->ServiceDispatcher:connected()
+' ServiceDispatcher-->RunConnection:run()
+' RunConnection->RunConnection:doConnected()
+' RunConnection->ServiceConnection:onServiceConnected()
+' ServiceConnection->BluetoothPeripheralHandover:onServiceConnected()
+' note right:BluetoothProfile.ServiceListener\n\BluetoothProfile.HEADSET
+BluetoothPeripheralHandover-->BluetoothPeripheralHandover:nextStep
+note right:MSG_NEXT_STEP
+BluetoothPeripheralHandover->BluetoothPeripheralHandover:nextStepInit()
+note right:ACTION_INIT
+activate BluetoothPeripheralHandover
+create BluetoothAdapter
+BluetoothPeripheralHandover->BluetoothAdapter:getProfileProxy()
+deactivate BluetoothPeripheralHandover
+deactivate BluetoothPeripheralHandover
+activate BluetoothAdapter
+
+BluetoothAdapter-->BluetoothPeripheralHandover:onServiceConnected()
+note right:**MSG_NEXT_STEP**
+deactivate BluetoothAdapter
+activate BluetoothPeripheralHandover
+BluetoothPeripheralHandover-->BluetoothPeripheralHandover:nextStep()
+note right:MSG_NEXT_STEP
+activate BluetoothPeripheralHandover
+BluetoothPeripheralHandover->BluetoothPeripheralHandover:nextStepInit()
+note right:ACTION_INIT
+deactivate BluetoothPeripheralHandover
+
+BluetoothPeripheralHandover->BluetoothPeripheralHandover:nextStep()
+activate BluetoothPeripheralHandover
+BluetoothPeripheralHandover-->BluetoothPeripheralHandover:nextStepConnect()
+note right:ACTION_CONNECT
+activate BluetoothPeripheralHandover
+BluetoothPeripheralHandover->BluetoothPeripheralHandover:requestPairConfirmation()
+note right:STATE_INIT_COMPLETE
+' create ConfirmConnectActivity
+BluetoothPeripheralHandover-->BluetoothPeripheralHandover:ConfirmConnectActivity:startActivity
+activate BluetoothPeripheralHandover
+deactivate BluetoothPeripheralHandover
+deactivate BluetoothPeripheralHandover
+deactivate BluetoothPeripheralHandover
+deactivate BluetoothPeripheralHandover
+
+NfcDispatcher->NfcDispatcher:NfcWifiProtectedSetup.tryNfcWifiSetup()
+note right:TNF_MIME_MEDIA == **<font color=blue>"application/vnd.wfa.wsc"**
+
+
+' note right:TNF_MIME_MEDIA == **<font color=blue>"application/com.android.managedprovisioning"**
+
+
+activate NfcDispatcher
+deactivate NfcDispatcher
+
+NfcDispatcher->NfcDispatcher:tryNdef()
+activate NfcDispatcher
+deactivate NfcDispatcher
+deactivate NfcDispatcher

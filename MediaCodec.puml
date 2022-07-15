@@ -121,6 +121,7 @@ NuPlayer->NuPlayer:**kWhatScanSources**
 activate NuPlayer
 NuPlayer->NuPlayer:instantiateDecoder()
 activate NuPlayer
+create Decoder
 NuPlayer->Decoder:DecoderBase::init()
 NuPlayer->Decoder:DecoderBase::configure()
 deactivate NuPlayer
