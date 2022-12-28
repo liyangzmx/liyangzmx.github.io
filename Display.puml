@@ -1,0 +1,189 @@
+@startuml Display
+
+skinparam {
+    ' monochrome true
+    ClassBorderColor white
+    ClassBackgroundColor white
+    Shadowing false
+    NoteFontColor #Black
+    NoteFontSize 16
+    NoteTextAlignment left
+    NoteBackgroundColor WhiteSmoke
+    NoteColor transparent
+    NoteBorderThickness 0
+    NoteBorderColor transparent
+    NoteBorderThickness 0
+    ' Linetype ortho
+    ' Linetype polyline
+}
+
+' package SurfaceFlinger {
+'     class "SurfaceFlinger" as VsyncFlinger {
+'         onComposerHalVsync()
+'     }
+
+'     class SurfaceFlinger {
+'         setTransactionState()
+'     }
+' ' }
+
+' class Scheduler {
+'     addResyncSample()
+' }
+
+' class VSyncDispatchTimerQueue {
+'     timerCallback()
+'     schedule()
+'     rearmTimerSkippingUpdateFor()
+'     setTimer()
+' }
+
+' class DispSyncSource {
+'     onVsyncCallback()
+' }
+
+' class EventThread {
+'     onVSyncEvent()
+
+'     threadMain()
+'     dispatchEvent()
+' }
+
+' class EventThreadConnection {
+'     postEvent()
+' }
+
+
+' class HardwareRenderer {
+'     syncAndDrawFrame()
+'     nSyncAndDrawFrame()
+' }
+
+' class DrawFrameTask {
+'     postAndWait()
+' }
+
+' class CanvasContext {
+'     draw()
+' }
+
+' class EglManager {
+'     swapBuffers()
+' }
+
+interface "VSyncDispatch::Callback" as VSyncDispatchCallback
+interface "VSyncSource::Callback" as VSyncSourceCallback
+
+' class TraversalRunnable {
+'     run()
+'     doTraversal()
+'     performTraversals()
+'     performDraw()
+'     draw()
+' }
+
+' class ThreadedRenderer {
+'     draw()
+'     syncAndDrawFrame()
+' }
+
+' class ViewRootImpl {
+'     scheduleTraversals()
+' }
+
+' class Choreographer {
+'     doFrame()
+'     doCallbacks()
+' }
+
+' class FrameDisplayEventReceiver {
+'     dispatchVsync()
+'     onEvent()
+' }
+
+' class BufferQueueProducer {
+'     queueBuffer()
+' }
+
+' class BLASTBufferQueue {
+'     onFrameAvailable()
+'     acquireNextBufferLocked()
+' }
+
+class "BitTube" as BitTube #Yellow
+
+interface IHwComposerCallback
+ComposerCallbackBridge -|> IHwComposerCallback
+SurfaceFlinger -|> ComposerCallback
+ComposerCallbackBridge o-- ComposerCallback:mCallback
+SurfaceFlinger o-- Scheduler:mScheduler
+Timer o-- VSyncDispatchTimerQueue:mCallback
+VSyncDispatchTimerQueue ..> Timer:alarmAt()
+Timer -|> TimeKeeper
+VSyncDispatchTimerQueue o-- TimeKeeper:mTimeKeeper
+Timer ..> VSyncDispatchTimerQueue:dispatch()
+VsyncSchedule o-- VSyncDispatch:mDispatch
+VSyncDispatchTimerQueue -|> VSyncDispatch
+Scheduler o-- VsyncSchedule:mVsyncSchedule
+VSyncDispatchTimerQueue o-- VSyncDispatchTimerQueueEntry:mCallbacks
+VSyncDispatchTimerQueueEntry o-- VSyncDispatchCallback:mCallback
+VSyncDispatchCallback ..> CallbackRepeater:callback
+CallbackRepeater o-- DispSyncSource:mCallback
+DispSyncSource o-- VSyncSourceCallback:mCallback
+EventThread -|> VSyncSourceCallback
+EventThread o-- EventThreadConnection:mDisplayEventConnections
+EventThreadConnection ..> DisplayEventReceiver:sendEvents()
+DisplayEventReceiver ..> BitTube:sendObjects()
+
+HardwareRenderer o-- RenderProxy:mRenderProxy
+RenderProxy o-- DrawFrameTask:mDrawFrameTask
+DrawFrameTask o-- RenderThread:mRenderThread
+RenderThread -|> ThreadBase
+ThreadBase o-- WorkQueue:mQueue
+WorkQueue o-[#blue]- WorkItem:mWorkQueue
+WorkItem .[#blue].> DrawFrameTask:run()
+DrawFrameTask o-[#blue]- CanvasContext:mContext
+CanvasContext o-- IRenderPipeline:mRenderPipeline
+SkiaPipeline -|> IRenderPipeline
+SkiaOpenGLPipeline -|> SkiaPipeline
+SkiaOpenGLPipeline o-- EglManager:mEglManager
+EglManager ..> libEGL:eglSwapBuffersWithDamageKHR()
+
+ThreadedRenderer -|> HardwareRenderer
+TraversalRunnable o-- AttachInfo:mAttachInfo
+AttachInfo o-- ThreadedRenderer:mThreadedRenderer
+ViewRootImpl o-- TraversalRunnable:TraversalRunnable
+
+Choreographer o-- CallbackQueue:mCallbackQueues[CALLBACK_TRAVERSAL]
+CallbackQueue o-- CallbackRecord:mHead
+CallbackRecord o-- Object:action
+TraversalRunnable -|> Runnable
+TraversalRunnable -|> Object
+
+Choreographer ..> TraversalRunnable:run()
+
+FrameDisplayEventReceiver ..> FrameHandler:handleMessage
+note on link:**MSG_DO_FRAME**
+FrameHandler ..> Choreographer:doFrame()
+
+class "DisplayEventReceiver" as DisplayEventReceiver2
+NativeDisplayEventReceiver ..> FrameDisplayEventReceiver:dispatchVsync()
+NativeDisplayEventReceiver -|> DisplayEventReceiver2
+DisplayEventReceiver2 o-- BitTube:mDataChannel
+
+libEGL ..> Surface:queueBuffer()
+Surface o-- IGraphicBufferProducer:mGraphicBufferProducer
+BufferQueueProducer -|> IGraphicBufferProducer
+BufferQueueProducer o-- BufferQueueCore:mCore
+BufferQueueCore o-- IConsumerListener:mConsumerListener
+ProxyConsumerListener -|> IConsumerListener
+ProxyConsumerListener o-- ConsumerListener:mConsumerListener
+BLASTBufferQueue -|> FrameAvailableListener
+ConsumerBase -|> ConsumerListener
+ConsumerBase o-- FrameAvailableListener:mFrameAvailableListener
+
+BLASTBufferQueue ..> Transaction:apply()
+Transaction ..> ISurfaceComposer:setTransactionState()
+SurfaceFlinger -|> ISurfaceComposer
+
+@enduml

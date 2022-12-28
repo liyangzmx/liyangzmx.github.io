@@ -1,0 +1,202 @@
+@startuml TvView
+
+skinparam {
+    ' monochrome true
+    ClassBorderColor white
+    ClassBackgroundColor white
+    Shadowing false
+    NoteFontColor #Black
+    NoteFontSize 16
+    NoteTextAlignment left
+    NoteBackgroundColor WhiteSmoke
+    NoteColor transparent
+    NoteBorderThickness 0
+    NoteBorderColor transparent
+    NoteBorderThickness 0
+    ' Linetype ortho
+    ' Linetype polyline
+}
+
+package TvView {
+    class TvView
+    class SurfaceView
+    class SurfaceHolder
+    class BaseSurfaceHolder
+    class Callback
+    class Surface
+    class ITvInputManagerSession
+}
+
+package TvInputService {
+    ' class TvInputService
+    class TisSessionCompat
+    class ITvInputSession
+    class TunerSession
+    class TunerSessionWorker {
+        <font color=red>**onChannelArrived()**
+    }
+    class ITvInputSessionWrapper
+    interface ITvInputManager
+    class "Session" as ITvInputManagerSession
+    class UserState
+    class SessionState
+    class BinderService
+    class "Session" as TvInputServiceSession {
+        <font color=red>**notifyTrackSelected()**
+    }
+    class TvInputManagerService
+    class SessionCallback
+    interface ITvInputSessionCallback
+    ' class InputChannel
+    class TvInputHardwareManager
+    class TvInputHal
+    class TvInputHardwareInfo
+}
+
+package Player {
+    class MpegTsPlayer
+    class ExoPlayer
+    ' class TunerChannel
+    class TsDataSourceManager
+    class RendererBuilder
+    class MpegTsRendererBuilder
+
+    interface RendererBuilder
+    class "Factory" as MpegTsSampleExtractorFactory
+    class "SampleExtractor" as SampleExtractor2
+    class SampleExtractor
+    class ExoPlayerSampleExtractor
+    class ExoPlayerSampleExtractorFactory
+    class MpegTsSampleExtractor
+    class MpegTsSampleSource
+    class SampleSource
+    class TrackRenderer
+    class MediaCodecTrackRenderer
+    class MediaCodecVideoTrackRenderer
+    class MpegTsVideoTrackRenderer
+}
+
+package Tuner {
+    class TunerDataSource
+    class TunerTsStreamer
+    interface DataSource
+    class TsDataSource
+    class TunerHal
+    class DvbTunerHal
+    class DvbDeviceAccessor
+    class DvbManager
+    class TunerTsStreamerManager
+    class TvInputManager
+    interface ITvInputClient
+    class StreamerFinder
+    class Tuner
+    class TunerHal {
+        readTsStream()
+        nativeWriteInBuffer()
+    }
+    TunerHal --|> Tuner
+    class DvbManager {
+        readTsStream()
+    }
+    class DvbDeviceAccessor {
+        openDvbDevice()
+    }
+}
+
+package Scanner {
+    class ChannelDataManager
+    class ProgramInfoListener
+    class ScanFragment
+    class ChannelScanTask
+}
+
+TvView o--- SurfaceView:mSurfaceView
+SurfaceView o--- Surface:mSurface
+SurfaceView o--- SurfaceHolder:mSurfaceHolder
+BaseSurfaceHolder --|> SurfaceHolder
+BaseSurfaceHolder o--- Callback:mCallbacks[]
+TvView o--- ITvInputManagerSession:mSession
+Callback ..> ITvInputManagerSession:setSurface()
+ITvInputManagerSession o--- ITvInputManager:mService
+BinderService --|> ITvInputManager
+TvInputManagerService ..> BinderService:publishBinderService()
+TvInputManagerService o--- UserState:mUserStates[]
+UserState o--- SessionState:sessionStateMap<>
+SessionState o--- ITvInputSession:session
+
+
+ITvInputSessionWrapper --|> ITvInputSession
+ITvInputSessionWrapper o--- TvInputServiceSession:mTvInputSessionImpl
+TvInputServiceSession o.. Surface:mSurface
+TisSessionCompat -[#red]-|> TvInputServiceSession
+TunerSession -[#red]-|> TisSessionCompat
+TunerSession o.. Surface:mSurface
+
+' Surface ..> MpegTsPlayer:setSurface()
+' TunerSessionWorker ..> MpegTsPlayer:CREATE
+MpegTsPlayer o.. Surface:mSurface
+ExoPlayer ---o MpegTsPlayer:mPlayer
+
+MpegTsPlayer o--- TsDataSourceManager:mSourceManager
+' TunerSessionWorker o--- TunerChannel:mChannel
+TunerSessionWorker o-[#red]-- TunerSession:<font color=red>**mSession**
+TsDataSourceManager o--- TunerTsStreamerManager:mTunerStreamerManager
+TunerTsStreamerManager o--- StreamerFinder:mStreamerFinder
+StreamerFinder o--- TunerTsStreamer:mStreamers[]
+TunerTsStreamer ..> TsDataSource:createDataSource()
+TunerTsStreamerManager o--- TunerTsStreamer:mSourceToStreamerMap<>
+TunerDataSource --|> TsDataSource
+TunerDataSource o--- TunerTsStreamer:mTsStreamer
+TunerTsStreamer o--- Tuner:mTunerHal
+TunerHal o--- DvbManager:sDvbManagers
+DvbTunerHal --|> TunerHal
+DvbManager ..> DvbTunerHal:openDvbDvrFd()
+
+DvbTunerHal o--- DvbDeviceAccessor:mDvbDeviceAccessor
+DvbDeviceAccessor o--- TvInputManager:mTvInputManager
+' DvbDeviceAccessor .[#blue].> TvInputManager:openDvbDevice()
+note on link:INVOKE
+TvInputManager o--- ITvInputManager:mService
+' TvInputManager .[#blue].> TvInputManagerService:openDvbDevice()
+TvInputManagerService .[#blue].> FD:OPENED
+FD o.. DvbManager:mDvrFd
+MpegTsPlayer o--- TsDataSource:mDataSource
+
+MpegTsPlayer o--- RendererBuilder:mRendererBuilder
+MpegTsRendererBuilder --|> RendererBuilder
+TsDataSource --|> DataSource
+MpegTsRendererBuilder o--- MpegTsSampleExtractorFactory:mMpegTsSampleExtractorFactory
+MpegTsSampleExtractor --|> MpegTsSampleExtractorFactory
+MpegTsSampleExtractor ..> ExoPlayerSampleExtractorFactory:create()
+MpegTsSampleExtractor --|> SampleExtractor
+MpegTsSampleExtractor o--- SampleExtractor2:mSampleExtractor
+ExoPlayerSampleExtractorFactory ..> ExoPlayerSampleExtractor:create
+ExoPlayerSampleExtractor --|> SampleExtractor2
+MpegTsSampleSource o--- SampleExtractor:mSampleExtractor
+
+MpegTsVideoTrackRenderer --|> MediaCodecVideoTrackRenderer
+MediaCodecVideoTrackRenderer --|> MediaCodecTrackRenderer
+MediaCodecTrackRenderer --|> TrackRenderer
+MediaCodecTrackRenderer o--- SampleSource:source
+MpegTsSampleSource --|> SampleSource
+
+TvInputManager o--- ITvInputClient:mClient
+TvInputServiceSession o-[#red]-- ITvInputSessionCallback:<font color=red>**mSessionCallback**
+SessionState o-[#red]-- ITvInputClient:<font color=red>**client**
+SessionCallback -[#red]-|> ITvInputSessionCallback
+' TvInputManagerService ..> SessionCallback:CREATE
+SessionCallback o-[#red]-- SessionState:<font color=red>**mSessionState**
+TunerSessionWorker .[#red].> ITvInputClient:<font color=red>**onTrackSelected()**</font>
+TunerSession o--- TunerSessionWorker:mSessionWorker
+' SessionCallback o-- InputChannel:mChannels[]
+TunerSessionWorker --|> ProgramInfoListener
+ChannelDataManager o-- ProgramInfoListener:mListener
+
+ScanFragment o-- ChannelScanTask:mChannelScanTask
+ScanFragment o-- ChannelDataManager:mChannelDataManager
+
+TvInputHardwareManager o-- TvInputHardwareInfo:mHardwareList[]
+TvInputHardwareManager o-- TvInputHal:mHal
+TvInputManagerService o-- TvInputHardwareManager:mTvInputHardwareManager
+
+@enduml
