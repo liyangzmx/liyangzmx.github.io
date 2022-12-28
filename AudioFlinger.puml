@@ -17,7 +17,7 @@ skinparam {
     ' Linetype polyline
 }
 
-package AudioTrack {
+package "<font size=40>AudioTrack</font>" {
     class AudioTrack
     class AudioFlingerClient
     class AudioDeviceCallback
@@ -25,68 +25,7 @@ package AudioTrack {
     class "audio_stream_type_t" as TrackStream
 }
 
-' package Stream {
-    class AudioStreamOut
-    interface StreamOutHalInterface
-    class StreamOutHalHidl
-    interface StreamHalInterface
-    class StreamOut
-    class StreamHalHidl
-    interface IStreamOut
-    interface IStream
-' }
-
-' package Device {
-    interface IDevice
-    class DeviceHalHidl
-    interface DeviceHalInterface
-    class AudioHwDevice
-' }
-
-' package Track {
-    interface IAudioTrack
-    class Track
-    class TrackHandle
-' }
-
-' package MixerThread {
-    class MixerThread
-    class PlaybackThread
-    class ThreadBase
-    class audio_io_handle_t
-' }
-
-' package Mixer {
-    class FastMixer
-    class AudioMixer
-    class NBAIO_Port
-    class NBAIO_Sink
-    class FastThread
-    class AudioMixerBase
-    class FastMixerStateQueue
-' }
-
-interface IEffect
-interface EffectHalInterface
-
-class AAudioServiceEndpointMMAP {
-    open()
-    openWithFormat()
-}
-class AAudioEndpointManager {
-    openEndpoint()
-    openExclusiveEndpoint()
-}
-class AAudioServiceEndpointMMAP {
-    open()
-}
-class AAudioService {
-    openStream()
-}
-class "AudioEndpointParcelable" as AudioEndpointParcelable2
-
-
-package AAudio {
+package "<font size=40>AAudio</font>" {
     class AudioStreamBuilder {
         build()
         builder_createStream()
@@ -107,188 +46,392 @@ package AAudio {
 
     class AudioEndpoint
     class FifoBufferIndirect
+    class RingBufferDescriptor
+}
+
+package "<font size=40>AAudioService</font>" {
     interface IAAudioService
+    class AAudioServiceStreamBase
+    class AAudioEndpointManager
+    class AudioEndpointParcelable
+    class "AudioEndpointParcelable" as AudioEndpointParcelable2
+
+    class AAudioServiceEndpointMMAP {
+        open()
+        openWithFormat()
+    }
+    class AAudioEndpointManager {
+        openEndpoint()
+        openExclusiveEndpoint()
+    }
+    class AAudioService {
+        openStream()
+    }
+    class AAudioServiceStreamMMAP
 }
 
-interface AudioPolicyInterface
-interface EngineInterface
+interface IAudioFlinger
 
-AudioFlinger ..> AudioSystem:getOutputForAttr()
-AudioSystem ..> IAudioPolicyService:getOutputForAttr()
+' package USBAudio {
+package "<font size=40>AudioHal</font>" {
+    class AudioStreamOut
+    interface StreamOutHalInterface
+    class StreamOutHalHidl
+    interface StreamHalInterface
+    class StreamOut
+    class StreamHalHidl
+    interface IStreamOut
+    interface IStream
+    class Stream
+    interface IDevice
+    class Device
+    class DeviceHalHidl
+    interface DeviceHalInterface
+    class AudioHwDevice
+}
 
-AudioPolicyService o--- AudioPolicyClient:mAudioPolicyClient
-AudioPolicyService o--- AudioPolicyInterface:mAudioPolicyManager
-AudioPolicyManager --|> AudioPolicyInterface
-AudioPolicyService --|> IAudioPolicyService
+package "<font size=40>USBAudio</font>" {
+    class stream_out
+    class audio_stream_out
+    class audio_stream
+    class audio_device
+    class audio_hw_device
+    class audio_module
+    class hw_module_methods_t
+    class hw_module_t
+}
+
+package "<font size=40>USB</font>" {
+    class "UsbAlsaDevice" as UsbAlsaDevice2
+    class UsbHostManager
+    class UsbAlsaManager
+    class UsbAlsaDevice
+    class UsbService
+    interface IUsbManager
+    class "Thread" as UsbHostManagerThread
+}
+
+package "<font size=40>AudioServer</font>" {
+    interface IAudioService
+    class AudioService
+    class AudioDeviceBroker
+    class AudioDeviceInventory
+    class AudioSystemAdapter
+    class "AudioSystem" as AudioSystem2
+}
+
+package "<font size=40>AudioPolicyService</font>" {
+    interface IAudioPolicyService
+    class AudioPolicyService
+    class Engine {
+        getOutputDevicesForStream()
+        getOutputDevicesForAttributes()
+        getDevicesForProductStrategy()
+        getDevicesForStrategyInt(**STRATEGY_MEDIA**)
+    }
+    class "audio_attributes_t" as EngineAttr
+    interface AudioPolicyInterface
+    interface EngineInterface
+    ' class AudioPolicyClient
+    class EngineBase
+    class AudioPolicyManager
+    class AudioPolicyManagerObserver
+    class DeviceDescriptor
+    class DeviceDescriptorBase
+    class AudioPortConfig
+    class AudioPort
+    class IOProfile
+    class "IOProfile" as IOProfile2
+    class SwAudioOutputCollection
+    class DefaultKeyedVector
+    class AudioOutputDescriptor
+    class SwAudioOutputDescriptor
+    class PolicyAudioPort
+    class HwModule
+    class audio_port_type_t
+    class ClientMapHandler
+    class TrackClientDescriptor
+    class audio_port_handle_t
+    class audio_module_handle_t
+    class "audio_io_handle_t" as audio_io_handle_t2
+    interface AudioPolicyClientInterface
+    class AudioPolicyClient
+    class audio_stream_type_t
+    class audio_attributes_t
+    class product_strategy_t
+}
+
+package "<font size=40>Track</font>" {
+    interface IAudioTrack
+    class Track
+    class TrackHandle
+    class AudioResampler
+    class AudioResamplerDyn
+    class audio_track_cblk_t
+    ' class Client
+    ' class MemoryDealer
+    ' class SimpleBestFitAllocator
+    class PatchProxyBufferProvider
+    class TrackBase
+    class "TrackBase" as RecordTrackBase
+    class "void *" as BUFFER
+    class PatchPanel
+    class PatchRecord
+    class PatchTrack
+    class RecordTrack
+    class PatchTrackBase
+    class Patch
+
+    interface IMemory
+    class MemoryBase
+    class Allocation
+}
+
+package "<font size=40>PlaybackThread</font>" {
+    class MixerThread
+    class PlaybackThread
+    class ThreadBase
+    class audio_io_handle_t
+    class FastMixer
+    class AudioMixer
+    class NBAIO_Port
+    class Thread
+    class NBAIO_Sink
+    class FastThread
+    class AudioMixerBase
+    class FastMixerStateQueue
+    class EffectChain
+    class EffectModule
+    class EffectHalHidl
+    interface IEffect
+    interface EffectHalInterface
+    class Effect
+}
+
+package "<font size=40>MmapThread</font>" {
+    class MmapPlaybackThread
+    interface MmapStreamInterface
+    class MmapThreadHandle
+    class MmapThread
+    class audio_mmap_buffer_info
+}
+
+package "<font size=40>Bluetooth</font>" {
+    class A2dpService
+    class A2dpStateMachine
+    class AudioManager
+}
+
+UsbService o--- UsbHostManager:mHostManager
+IUsbManager <|-- UsbService
+' UsbManager o--- IUsbManager:mService
+UsbHostManager ...> UsbHostManagerThread:CREATE
+UsbHostManagerThread ...> UsbHostManager:monitorUsbHostBus()
+note on link:**NEW_DEVICE_ADDED**
+
+UsbHostManager o--- UsbAlsaManager:mUsbAlsaManager
+UsbAlsaManager o--- IAudioService:mAudioService
+UsbAlsaDevice2 o--- IAudioService:mAudioService
+UsbAlsaManager o--- UsbAlsaDevice:mAlsaDevices[]
+UsbAlsaManager o--- UsbAlsaDevice2:mSelectedDevice
+IAudioService <|-- AudioService
+AudioService o--- AudioDeviceBroker:mDeviceBroker
+AudioDeviceBroker o--- AudioDeviceInventory:mDeviceInventory
+AudioDeviceInventory o--- AudioSystemAdapter:mAudioSystem
+AudioSystemAdapter ...> AudioSystem2:<font color=blue>**setDeviceConnectionState()**
+AudioSystem2 ...> AudioPolicyService:<font color=blue>**setDeviceConnectionState()**
+
+A2dpStateMachine ...> A2dpService:<font color=blue>**ACTION_CONNECTION_STATE_CHANGED**
+A2dpService o--- AudioManager:<font color=blue>**mAudioManager**
+AudioManager ...> IAudioService:<font color=blue>**handleBluetoothActiveDeviceChanged()**
+
+stream_out *-- audio_stream_out:stream
+audio_stream_out *-- audio_stream:common
+audio_device *-- audio_hw_device:hw_device
+audio_hw_device ...> audio_stream_out:open_output_stream()
+audio_module *-- hw_module_t:common
+hw_module_t o--- hw_module_methods_t:methods
+hw_module_methods_t ...> audio_hw_device:open()
+StreamOut o--- audio_stream_out:mStream
+IStream <|-- Stream
+Stream o--- audio_stream:mStream
+Device o--- audio_hw_device:mDevice
+audio_device ...> stream_out:output_stream_list[]
+
+AudioFlinger ...> AudioSystem:getOutputForAttr()
+AudioSystem ...> IAudioPolicyService:getOutputForAttr()
+
+' AudioPolicyService o--- AudioPolicyClient:mAudioPolicyClient
+AudioPolicyService o--- AudioPolicyInterface:<font color=blue>**mAudioPolicyManager**
+AudioPolicyInterface <|--- AudioPolicyManager
+IAudioPolicyService <|-- AudioPolicyService
 AudioPolicyService o--- EngineInterface:mEngine
-EngineBase --|> EngineInterface
-class Engine {
-    getOutputDevicesForStream()
-    getOutputDevicesForAttributes()
-    getDevicesForProductStrategy()
-    getDevicesForStrategyInt(**STRATEGY_MEDIA**)
-}
-Engine --|> EngineInterface
+EngineInterface <|-- EngineBase
+
+EngineBase <|-- Engine
 EngineBase o--- AudioPolicyManagerObserver:mApmObserver
 
 AudioTrack *-- TrackStream:mOriginalStreamType
-TrackStream ..> EngineAttr:AudioSystem::streamTypeToAttributes()
-class "audio_attributes_t" as EngineAttr
-EngineAttr ..> audio_stream_type_t:getStreamTypeForAttributes()
-audio_stream_type_t ..> audio_attributes_t:getAttributesForStreamType()
-audio_attributes_t ..> product_strategy_t:getProductStrategyForAttributes()
-product_strategy_t ..> DeviceDescriptor:getDevicesForStrategyInt()
+TrackStream ...> EngineAttr:AudioSystem::streamTypeToAttributes()
+EngineAttr ...> audio_stream_type_t:getStreamTypeForAttributes()
+audio_stream_type_t ...> audio_attributes_t:getAttributesForStreamType()
+audio_attributes_t ...> product_strategy_t:getProductStrategyForAttributes()
+product_strategy_t ...> DeviceDescriptor:getDevicesForStrategyInt()
 
-AudioPolicyManager --|> AudioPolicyManagerObserver
+AudioPolicyManagerObserver <|-- AudioPolicyManager 
 AudioPolicyManager o--- DeviceDescriptor:mAvailableOutputDevices
 AudioPolicyManager o--- SwAudioOutputCollection:mOutputs
-SwAudioOutputCollection --|> DefaultKeyedVector
+AudioPolicyManager ...> AudioFlinger:<font color=blue>**installPatch()**
+AudioFlinger ...> Patch:<font color=blue>**createAudioPatch()**
+DefaultKeyedVector <|-- SwAudioOutputCollection 
 DefaultKeyedVector o--- SwAudioOutputDescriptor:mDefault
-SwAudioOutputDescriptor --|> AudioOutputDescriptor
+AudioOutputDescriptor <|-- SwAudioOutputDescriptor 
+SwAudioOutputDescriptor o--- AudioPolicyClientInterface
+AudioPolicyClientInterface <|-- AudioPolicyClient
+AudioPolicyClient ...> IAudioFlinger:openOutput()
+IAudioFlinger  <|-- AudioFlinger
 SwAudioOutputCollection o--- IOProfile:mProfile
-IOProfile --|> AudioPort
-IOProfile --|> PolicyAudioPort
+AudioPort <|-- IOProfile 
+PolicyAudioPort <|-- IOProfile 
 AudioPort o--- audio_port_type_t:mType
 AudioOutputDescriptor o--- PolicyAudioPort:mPolicyAudioPort
 PolicyAudioPort o--- HwModule:mModule
 HwModule *-- audio_module_handle_t:mHandle
-class "IOProfile" as IOProfile2
 HwModule o--- IOProfile2:mOutputProfiles
-AudioOutputDescriptor --|> ClientMapHandler
+ClientMapHandler <|-- AudioOutputDescriptor 
 ClientMapHandler o--- TrackClientDescriptor:mClients[<audio_port_handle_t>]
 TrackClientDescriptor o--- audio_port_handle_t:mPreferredDeviceId
-class "audio_io_handle_t" as audio_io_handle_t2
 AudioPortConfig o--- audio_io_handle_t2:mId
 audio_io_handle_t2 .. audio_io_handle_t
-DeviceDescriptor --|> DeviceDescriptorBase
-DeviceDescriptorBase --|> AudioPortConfig
-DeviceDescriptorBase --|> AudioPort
-AudioOutputDescriptor --|> AudioPortCo
+DeviceDescriptorBase <|-- DeviceDescriptor
+AudioPortConfig <|-- DeviceDescriptorBase 
+AudioPort <|-- DeviceDescriptorBase
+AudioPortConfig <|-- AudioOutputDescriptor
 
-AudioStreamAAudio --|> AudioStream
-AudioStream --|> AudioStreamBase
+AudioStream <|-- AudioStreamAAudio 
+AudioStreamBase <|-- AudioStream 
 AudioStreamAAudio o--- AAudioLoader:mLibLoader
 
-AudioStreamBuilder ..> AudioStreamAAudio:build()
-AudioStreamBuilder ..> AudioStreamInternalPlay:CREATE
-AudioStreamInternalPlay --|> AudioStreamInternal
-AudioStreamInternal --|> AudioStream
+AudioStreamBuilder ...> AudioStreamAAudio:build()
+AudioStreamBuilder ...> AudioStreamInternalPlay:CREATE
+AudioStreamInternal <|-- AudioStreamInternalPlay 
+AudioStream <|-- AudioStreamInternal 
 AudioStreamInternal o--- AAudioServiceInterface:mServiceInterface
-AAudioBinderAdapter --|> AAudioServiceInterface
+AAudioServiceInterface <|-- AAudioBinderAdapter 
 AAudioBinderAdapter o--- IAAudioService:mDelegate
-AAudioService --|> IAAudioService
+IAAudioService <|-- AAudioService 
 AudioStreamInternal o--- AudioEndpointParcelable:mEndPointParcelable
-AudioEndpointParcelable ..> EndpointDescriptor:resolve()
+AudioEndpointParcelable ...> EndpointDescriptor:resolve()
+EndpointDescriptor *---- RingBufferDescriptor:downMessageQueueDescriptor
+RingBufferDescriptor ..> unique_fd:dataAddress
 AudioEndpointParcelable o--- RingBufferParcelable:mDownDataQueueParcelable
 RingBufferParcelable o--- SharedRegionParcelable:mDataParcelable
 AudioStreamInternal o--- AudioEndpoint:mAudioEndpoint
 AudioStreamInternal o--- FifoBufferIndirect:mDataQueue
-AudioEndpoint ..> FifoBufferIndirect:PARAMS
+AudioEndpoint ...> FifoBufferIndirect:PARAMS
 
-AudioTrack --|> AudioDeviceCallback
-' AudioTrack ..> AudioFlinger:createTrack()
-TrackHandle --|> IAudioTrack
+AudioDeviceCallback <|-- AudioTrack 
+' AudioTrack ...> AudioFlinger:createTrack()
+IAudioTrack <|-- TrackHandle 
 TrackHandle o--- Track:mTrack
 PlaybackThread o--- Track:mTracks
 AudioTrack o--- IAudioTrack:mAudioTrack
 
 AudioFlinger o--- NotificationClient:mNotificationClients
 NotificationClient o--- IAudioFlingerClient:mAudioFlingerClient
-AudioFlingerClient --|> IAudioFlingerClient
+IAudioFlingerClient <|-- AudioFlingerClient 
 AudioFlingerClient o--- AudioDeviceCallback:mAudioDeviceCallbacks
 
-MixerThread o--- AudioStreamOut:mOutput
+' MixerThread o--- AudioStreamOut:mOutput
 AudioStreamOut o--- AudioHwDevice:audioHwDev
 AudioHwDevice o--- DeviceHalInterface:mHwDevice
 AudioStreamOut o--- StreamOutHalInterface:stream
 PlaybackThread o--- AudioStreamOut:mOutput
-StreamOutHalHidl --|> StreamHalHidl
-StreamOutHalHidl --|> StreamOutHalInterface
-StreamOutHalInterface --|> StreamHalInterface
+StreamHalHidl <|-- StreamOutHalHidl 
+StreamOutHalInterface <|-- StreamOutHalHidl 
+StreamHalInterface <|-- StreamOutHalInterface 
 StreamOutHalHidl o--- IStreamOut:mStream
 StreamHalHidl o--- IStream:mStream
-IStreamOut --|> IStream
-StreamOut --|> IStreamOut
-Device --|> IDevice
-DeviceHalHidl --|> DeviceHalInterface
+IStream <|-- IStreamOut 
+IStreamOut <|-- StreamOut
+IDevice <|-- Device 
+DeviceHalInterface <|-- DeviceHalHidl 
 DeviceHalHidl o--- IDevice:mDevice
 
-MixerThread --|> PlaybackThread
-PlaybackThread --|> ThreadBase
+PlaybackThread <|-- MixerThread 
+ThreadBase <|-- PlaybackThread 
 ThreadBase o--- audio_io_handle_t:mId
-ThreadBase --|> Thread
+Thread <|-- ThreadBase 
 ThreadBase o--- EffectChain:mEffectChains[]
 EffectChain o--- EffectModule:mEffects[]
 EffectModule o--- EffectHalInterface:mEffectInterface
-EffectHalHidl --|> EffectHalInterface
+EffectHalInterface <|-- EffectHalHidl 
 EffectHalHidl o--- IEffect:mEffect
-Effect --|> IEffect
+IEffect <|-- Effect 
 MixerThread o--- AudioMixer
-AudioMixer --|> AudioMixerBase
+AudioMixerBase <|-- AudioMixer 
 MixerThread o--- FastMixer:mFastMixer
-FastMixer --|> FastThread
+FastThread <|-- FastMixer 
 FastMixer o--- AudioMixer:mMixer
 FastMixer o--- NBAIO_Sink:mOutputSink
-NBAIO_Sink --|> NBAIO_Port
+NBAIO_Port <|-- NBAIO_Sink 
 FastMixer o--- FastMixerStateQueue:mSQ
-AudioFlinger o--- AudioHwDevice:mAudioHwDevs[]
+' AudioFlinger o--- AudioHwDevice:mAudioHwDevs[]
 AudioFlinger o--- PlaybackThread:mPlaybackThreads
 AudioFlinger o--- MmapThread:mMmapThreads
-MmapPlaybackThread --|> MmapThread
-AudioFlinger o--- AudioHwDevice:mPrimaryHardwareDev
+MmapThread <|-- MmapPlaybackThread 
+' AudioFlinger o--- AudioHwDevice:mPrimaryHardwareDev
 
-' AudioFlinger ..> Track:CREATE
-Device ..> StreamOut:OPEN
+' AudioFlinger ...> Track:CREATE
+Device ...> StreamOut:OPEN
 
 AudioFlinger o--- PatchPanel:mPatchPanel
 PatchPanel o--- Patch:mPatchs
-Patch o--- PatchTrack:mPlayback
-Patch o--- PatchRecord:mRecord
-PatchRecord --|> RecordTrack
-class "TrackBase" as RecordTrackBase
-RecordTrack --|> RecordTrackBase
-class "void *" as BUFFER
-RecordTrackBase o--- BUFFER:mBuffer
+Patch o--- PatchTrack:<font color=blue>**mPlayback**
+Patch o---- PatchRecord:<font color=blue>**mRecord**
+RecordTrack <|----PatchRecord 
+RecordTrackBase <|---- RecordTrack 
+RecordTrackBase o--- BUFFER:<font color=blue>**mBuffer**
 
-TrackBase o.. BUFFER:mBuffer
-PatchTrack --|> Track
-PatchTrack --|> PatchTrackBase
+TrackBase o.... BUFFER:mBuffer
+Track <|---- PatchTrack 
+PatchTrackBase <|-- PatchTrack 
 TrackBase o--- AudioResampler:mResampler
-Track --|> TrackBase
+TrackBase <|---- Track 
 Track o--- audio_track_cblk_t:mCblk
 Track o--- IMemory:mCblkMemory
-TrackBase o--- Client:mClient
-Client o--- MemoryDealer:mMemoryDealer
-MemoryDealer o--- SimpleBestFitAllocator:mAllocator
-Allocation --|> MemoryBase
-MemoryBase --|> IMemory
+' TrackBase o--- Client:mClient
+' Client o--- MemoryDealer:mMemoryDealer
+' MemoryDealer o--- SimpleBestFitAllocator:mAllocator
+MemoryBase <|-- Allocation 
+IMemory <|-- MemoryBase 
 AudioTrack o.. IMemory:mSharedBuffer
 AudioTrack o.. audio_track_cblk_t:mCblk
-AudioResamplerDyn --|> AudioResampler
+AudioResampler <|-- AudioResamplerDyn 
 
 TrackBase o--- ThreadBase:mThread
 TrackBase o--- PatchProxyBufferProvider:bufferProvider
-PatchRecord --|> PatchTrackBase
-PatchTrackBase --|> PatchProxyBufferProvider
+PatchTrackBase <|-- PatchRecord 
+PatchProxyBufferProvider <|-- PatchTrackBase 
 ' PatchTrackBase o--- ClientProxy:mProxy
-MmapStreamInterface ..> AudioFlinger:openMmapStream()
+MmapStreamInterface ...> AudioFlinger:openMmapStream()
 
-AAudioServiceEndpointMMAP ..> MmapStreamInterface:openMmapStream()
-AAudioEndpointManager ..> AAudioServiceEndpointMMAP:CREATE
+AAudioServiceEndpointMMAP ...> MmapStreamInterface:openMmapStream()
+AAudioEndpointManager ...> AAudioServiceEndpointMMAP:CREATE
 AAudioServiceStreamBase o--- AAudioEndpointManager:mEndpointManage
-AAudioServiceStreamMMAP --|> AAudioServiceStreamBase
+AAudioServiceStreamBase <|-- AAudioServiceStreamMMAP 
 AAudioServiceEndpointMMAP o--- MmapStreamInterface:mMmapStream
-MmapThreadHandle --|> MmapStreamInterface
+MmapStreamInterface <|-- MmapThreadHandle 
 MmapThreadHandle o--- MmapThread:mThread
-MmapThread ..> audio_mmap_buffer_info:createMmapBuffer()
+MmapThread ...> audio_mmap_buffer_info:createMmapBuffer()
 AAudioServiceEndpointMMAP o--- audio_mmap_buffer_info:mMmapBufferinfo
 audio_mmap_buffer_info *-- unique_fd:shared_memory_fd
 AAudioServiceEndpointMMAP *-- unique_fd:mAudioDataFileDescriptor
 
 SharedRegionParcelable o.. unique_fd:mFd
 
-AAudioService ..> AAudioServiceStreamMMAP:CREATE
-AAudioServiceStreamMMAP ..> AudioEndpointParcelable2:getAudioDataDescription_l()
-AudioEndpointParcelable2 ..> AudioEndpointParcelable:BINDER
+AAudioService ...> AAudioServiceStreamMMAP:CREATE
+AAudioServiceStreamMMAP ...> AudioEndpointParcelable2:getAudioDataDescription_l()
+AudioEndpointParcelable2 ...> AudioEndpointParcelable:BINDER
 
 @enduml
