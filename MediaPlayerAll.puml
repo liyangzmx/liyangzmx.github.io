@@ -1,4 +1,4 @@
-@startuml MediaPlayer
+@startuml MediaPlayerAll
 
 skinparam {
     ' monochrome true
