@@ -57,12 +57,15 @@ package "<font size=48>NuPlayer</font>" {
     class GenericSource
     class "Track" as TrackVideo
     class "Track" as TrackAudio
+    class AudioOutput
+    class "NuPlayer::Renderer" as NuPlayerRenderer
+    class "MediaPlayerBase::AudioSink" as MediaPlayerBaseAudioSink
 }
 
-class BufferCallback
-class MediaCodec
 
-package "<font size=48>CCodec</font>" {
+package "<font size=48>MediaCodec(CCodec)</font>" {
+    class BufferCallback
+    class MediaCodec
     class CodecBase
     class BufferChannelBase
     class "CCodec::ClientListener" as ClientListener
@@ -71,6 +74,9 @@ package "<font size=48>CCodec</font>" {
     class CCodecBufferChannel
     class HidlListener
     interface IHwComponentListener
+    class "Codec2Client::Component" as Codec2ClientComponent
+    class "Codec2Client::Component::OutputBufferQueue" as Codec2ClientComponentOutputBufferQueue
+    class OutputBufferQueue
 }
 
 
@@ -83,13 +89,17 @@ package "<font size=48>C2Work</font>" {
 
 package "<font size=48>Output</font>" {
     class OutputBuffers
+    ' class OutputBuffersArray
     class Output
     class "Codec2Buffer" as DummyCodec2Buffer
     class FlexOutputBuffers
     class GraphicOutputBuffers
+    ' class BuffersArrayImpl
     class "Entry" as OutputEntry
     class DummyContainerBuffer
     class FlexBuffersImpl
+    class "MediaCodecBuffer" as OutputMediaCodecBuffer
+    class "BufferInfo" as OutputBufferInfo
 }
 
 package "<font size=48>Input</font>" {
@@ -142,14 +152,23 @@ package "<font size=48>C2BlockPool</font>" {
     class ClientBuffer
 }
 
-    ' class "C2Buffer" as OutputC2Buffer
-package "<font size=48>C2Buffer</font>" {
-    class C2Buffer
+' package "<font size=48>C2Buffer</font>" {
+'     class C2Buffer
+'     class "C2Buffer::Impl" as C2BufferImpl
+'     class "C2BufferData::Impl" as C2BufferDataImpl
+'     class BufferDataBuddy
+'     ' class "C2Buffer" as OutputC2Buffer
+'     class C2BufferData
+' }
+
+package "<font size=48>C2Block1D</font>" {
+    class "C2Buffer" as C2Buffer1D
+    class "C2Buffer::Impl" as C2BufferImpl1D
+    class "C2BufferData::Impl" as C2BufferDataImpl1D
+    class "BufferDataBuddy" as BufferDataBuddy1D
+    class "C2BufferData" as C2BufferData1D
+
     class "C2ReadView::Impl" as C2ReadViewImpl
-    class "C2Buffer::Impl" as C2BufferImpl
-    class "C2BufferData::Impl" as C2BufferDataImpl
-    class BufferDataBuddy
-    class C2BufferData
     class C2ReadView
     class C2ConstLinearBlock
     class "C2Block1D" as ConstC2Block1D
@@ -162,26 +181,148 @@ package "<font size=48>C2Buffer</font>" {
     class _C2MappedBlock1DImpl
     class "uint8_t *" as DATA2
     class _C2Block1DImpl
+    class "C2Fence" as C2Fence1D
+    class "C2Fence::Impl" as C2FenceImpl1D
 }
 
+package "<font size=48>WorkBundle</font>" {
+    class WorkBundle
+    class "Work" as Work
+    class "FrameData" as OutputFrameData
+    class "FrameData" as InputFrameData
+    class "Buffer" as WorkBuffer
+    class "Buffer" as WorkInputBuffer
+    class Worklet
+    class "Block" as WorkBlock
+    class "Block" as InputBlock
+    class "native_handle_t" as WorkHandle
+    class "hidl_handle" as BufferHandle
+    ' class "hidl_handle" as BlockHandle
+    class "hidl_handle" as LinearHandle
+    ' class hidl_union
+    ' class SyncFenceImpl
+    class "BaseBlock" as LinearBaseBlock
+    class "BaseBlock" as GraphicBaseBlock
+    class "hidl_union" as LinearBlockUnion
+    class "hidl_union" as GraphicBlockUnion
+    ' class "Fence" as LinearFence
+    class "native_handle_t" as Fence1DHandle
+}
+
+package "<font size=48>C2Block2D</font>" {
+    class "C2Buffer" as C2Buffer2D
+    class "C2Buffer::Impl" as C2BufferImpl2D
+    class "C2BufferData::Impl" as C2BufferDataImpl2D
+    class "BufferDataBuddy" as BufferDataBuddy2D
+    class "C2BufferData" as C2BufferData2D
+
+    class C2Block2D
+    class "C2Block2D::Impl" as C2Block2DImpl
+    class C2ConstGraphicBlock
+    class C2Fence
+    class "C2Fence::Impl" as C2FenceImpl
+    class _C2MappingBlock2DImpl
+    ' class C2GraphicBlock
+    ' class C2BaseBlock
+    class "hidl_handle" as GraphicHandle
+    class "_C2BlockPoolData" as Graphic_C2BlockPoolData
+    class "C2AllocatorGralloc::Impl" as C2AllocatorGrallocImpl
+    class C2Handle
+    class C2GraphicAllocation
+    class C2HandleGralloc
+    class _C2Block2DImpl
+    class C2AllocatorGralloc
+    class C2AllocationGralloc
+    ' class C2BufferQueueBlockPoolData
+}
+
+interface IGraphicBufferProducer
+
+AudioOutput o--- AudioTrack:mTrack
+
+' C2Block2D <|-- C2GraphicBlock
+
+_C2MappingBlock2DImpl <|-- C2Block2DImpl
+_C2Block2DImpl <|-- _C2MappingBlock2DImpl
+_C2Block2DImpl o--- C2GraphicAllocation:mAllocation
+_C2Block2DImpl o--- Graphic_C2BlockPoolData:mPoolData
+
+' Work ..> C2Work
+' Worklet ..> C2Worklet
+' OutputFrame ..> C2FrameData
+' WorkBuffer ..> C2Buffer
+
+WorkBundle o--- Work:works
+WorkBundle o--- LinearBaseBlock:baseBlocks[]
+LinearBaseBlock o--- LinearBlockUnion:hidl_u
+LinearBlockUnion o--- LinearHandle:nativeBlock
+WorkBundle o--- GraphicBaseBlock:baseBlocks[]
+GraphicBaseBlock o--- GraphicBlockUnion:hidl_u
+GraphicBlockUnion o--- BufferHandle:nativeBlock
+' C2Handle .. BlockHandle
+' C2Handle ..> C2GraphicBlock:CreateGraphicBlock()
+C2AllocatorGralloc ..> C2GraphicAllocation:priorGraphicAllocation()
+C2AllocatorGralloc o--- C2AllocatorGrallocImpl:mImpl
+C2Handle <|-- C2HandleGralloc
+C2HandleGralloc ..> GraphicHandle:UnwrapNativeHandle
+C2GraphicAllocation <|-- C2AllocationGralloc
+C2AllocationGralloc o--- C2HandleGralloc:mHandle
+' Graphic_C2BlockPoolData <|-- C2BufferQueueBlockPoolData
+' C2BaseBlock o--- C2GraphicBlock
+' C2GraphicBlock ..> C2Buffer2D:createGraphicBuffer()
+
+C2BufferImpl2D o--- C2ConstGraphicBlock:mData
+C2BufferDataImpl2D o--- C2ConstGraphicBlock:mGraphicBlocks[]
+
+' Work .. C2Work:objcpy()
+' Worklet .. C2Worklet:objcpy()
+' OutputFrameData .. C2FrameData:objcpy()
+' WorkBuffer .. C2Buffer2D:objcpy()
+
+Work o--- Worklet:worklets
+Worklet o--- OutputFrameData:output
+OutputFrameData o--- WorkBuffer:buffers
+Worklet o--- InputFrameData:input
+InputFrameData o--- WorkInputBuffer:buffers
+
+WorkBuffer o--- WorkBlock:blocks[]
+C2AllocationIonImpl o--- C2HandleIon:mHandle
+
+WorkBlock o--- BufferHandle:fence
+InputBlock o--- LinearHandle:fence
+LinearHandle o--- Fence1DHandle:mHandle
+WorkInputBuffer o--- InputBlock:blocks[]
+BufferHandle o--- WorkHandle:mHandle
+' C2FenceImpl <|-- SyncFenceImpl
+C2FenceImpl <.. BufferHandle:CreateFromNativeHandle()
+C2Fence o--- C2FenceImpl:mImpl
+C2ConstGraphicBlock o--- C2Fence:mFence
+C2Block2D <|-- C2ConstGraphicBlock
+C2Block2D o--- C2Block2DImpl
+
+NuPlayer o--- NuPlayerRenderer:mRenderer
+
 IMediaPlayerService <|-- MediaPlayerService
-MediaPlayerService o-- Client:mClients[]
-NuPlayerDriver o-- NuPlayer:mPlayer
-Client o-- MediaPlayerBase:mPlayer
+MediaPlayerService o--- Client:mClients[]
+NuPlayerDriver o--- NuPlayer:mPlayer
+Client o--- MediaPlayerBase:mPlayer
 MediaPlayerBase <|-- MediaPlayerInterface
 MediaPlayerInterface <|-- NuPlayerDriver
-NuPlayer o-- Source:mSource
+NuPlayer o--- Source:mSource
 Source <|-- GenericSource
-GenericSource o-- TrackVideo:mVideoTrack
-TrackVideo o-- VideoMediaSource:mSource
-GenericSource o-- TrackAudio:mAudioTrack
-TrackAudio o-- AudioMediaSource:mSource
+GenericSource o--- TrackVideo:mVideoTrack
+TrackVideo o--- VideoMediaSource:mSource
+GenericSource o--- TrackAudio:mAudioTrack
+TrackAudio o--- AudioMediaSource:mSource
 VideoMediaSource <|-- RemoteMediaSource
 AudioMediaSource <|-- RemoteMediaSource
-RemoteMediaSource o-- RemoteMediaExtractor:mExtractor
+RemoteMediaSource o--- RemoteMediaExtractor:mExtractor
 IMediaExtractor <|-- RemoteMediaExtractor
-RemoteMediaSource o-- MediaTrack:mTrack
-NuPlayer o-- DecoderBase:mVideoDecoder
+RemoteMediaSource o--- MediaTrack:mTrack
+NuPlayer o--- DecoderBase:mVideoDecoder
+
+MediaPlayerBaseAudioSink <|-- AudioOutput
+NuPlayerRenderer o--- MediaPlayerBaseAudioSink:mAudioSink
 
 GenericSource ..> IMediaExtractor:getTrack()
 RemoteMediaExtractor ..> VideoMediaSource:getTrack()
@@ -189,99 +330,115 @@ RemoteMediaExtractor ..> VideoMediaSource:getTrack()
 VideoMediaSource <|-- MediaTrackCUnwrapper
 MediaTrackCUnwrapper ..> MediaTrackHelper:start()
 MediaTrackHelper <|-- MPEG4Source
-MPEG4Source o-- MediaBufferGroupHelper:mBufferGroup
-MediaBufferGroupHelper o-- CMediaBufferGroup:mGroup
+MPEG4Source o--- MediaBufferGroupHelper:mBufferGroup
+MediaBufferGroupHelper o--- CMediaBufferGroup:mGroup
 CMediaBufferGroup ..> MediaBufferGroup:init()
-MediaBufferGroup o-- CMediaBufferGroup:mWrapper
-MediaBufferGroup o-- InternalData:mInternal
-InternalData o-- MediaBufferBase:mBuffers[]
+MediaBufferGroup o--- CMediaBufferGroup:mWrapper
+MediaBufferGroup o--- InternalData:mInternal
+InternalData o--- MediaBufferBase:mBuffers[]
 MediaBufferBase <|-- MediaBuffer
-MediaBuffer o-- DATA:mData
-MediaBuffer o-- IMemory:mMemory
+MediaBuffer o--- DATA:mData
+MediaBuffer o--- IMemory:mMemory
 IMemory <|-- MemoryBase
-MemoryBase o-- IMemoryHeap:mHeap
+MemoryBase o--- IMemoryHeap:mHeap
 IMemoryHeap <|-- MemoryHeapBase
 
-Decoder o-- Source:mSource
+Decoder o--- Source:mSource
 DecoderBase <|-- Decoder
-CCodec o-- CCodecBufferChannel:mChannel
+CCodec o--- CCodecBufferChannel:mChannel
 BufferChannelBase <|-- CCodecBufferChannel
-BufferChannelBase o-- BufferCallback:mCallback
+CCodecBufferChannel o--- Codec2ClientComponent
+Codec2ClientComponent o--- Codec2ClientComponentOutputBufferQueue:mOutputBufferQueue
+OutputBufferQueue <|-- Codec2ClientComponentOutputBufferQueue
+OutputBufferQueue ..> IGraphicBufferProducer:mIgbp
+BufferChannelBase o--- BufferCallback:mCallback
 BufferCallback ..> MediaCodec:**CALLBACK**
 ' BufferCallback ..[#blue]> MediaCodec:<font color=blue>**kWhatFillThisBuffer**
 ' BufferCallback ..[#red]> MediaCodec:<font color=red>**kWhatDrainThisBuffer**
 ' MediaCodec ..[#blue]> Decoder:<font color=blue>**CB_INPUT_AVAILABLE**
 ' MediaCodec ..[#red]> Decoder:<font color=red>**CB_OUTPUT_AVAILABLE**
-MediaCodec o-- BufferChannelBase:mBufferChannel
+MediaCodec o--- BufferChannelBase:mBufferChannel
 
 IHwComponentListener <|-- HidlListener
 HidlListener *-- Listener:base
 Listener <|-- ClientListener
-ClientListener o-- CCodec:mCodec
+ClientListener o--- CCodec:mCodec
 CodecBase <|-- CCodec
-MediaCodec o-- CodecBase:mCodec
-Decoder o-- MediaCodec:mCodec
+MediaCodec o--- CodecBase:mCodec
+Decoder o--- MediaCodec:mCodec
 
 MediaCodecBuffer <|-- Codec2Buffer
 
-MediaCodecBuffer o-- ABuffer:mBuffer
-CCodecBufferChannel o-- Input:mInput
-Input o-- InputBuffers:buffers
+MediaCodecBuffer o--- ABuffer:mBuffer
+CCodecBufferChannel o--- Input:mInput
+Input o--- InputBuffers:buffers
 ' CCodecBuffers <|-- InputBuffers
 InputBuffers <|-- LinearInputBuffers
-InputBuffers o-- C2BlockPool:mPool
+InputBuffers o--- C2BlockPool:mPool
 C2BlockPool <|-- C2PooledBlockPool
-C2PooledBlockPool o-- C2PooledBlockPoolImpl:mImpl
-C2PooledBlockPoolImpl o-- ClientManager:mBufferPoolManager
-ClientManager o-- ClientManagerImpl:mImpl
+C2PooledBlockPool o--- C2PooledBlockPoolImpl:mImpl
+C2PooledBlockPoolImpl o--- ClientManager:mBufferPoolManager
+ClientManager o--- ClientManagerImpl:mImpl
 ClientManagerImpl ..> BufferPoolClient:alloc()
-BufferPoolClient o-- BufferPoolClientImpl:mImpl
-BufferPoolClientImpl o-- Connection:mLocalConnection
-Connection o-- Accessor:mAccessor
-Accessor o-- AccessorImpl:mImpl
-AccessorImpl o-- BufferPoolAllocator:mAllocator
+BufferPoolClient o--- BufferPoolClientImpl:mImpl
+BufferPoolClientImpl o--- Connection:mLocalConnection
+Connection o--- Accessor:mAccessor
+Accessor o--- AccessorImpl:mImpl
+AccessorImpl o--- BufferPoolAllocator:mAllocator
 BufferPoolAllocator <|-- _C2BufferPoolAllocator
 
-LinearInputBuffers o-- InputFlexBuffersImpl:mImpl
-InputFlexBuffersImpl o-- InputEntry:mBuffers[]
-InputEntry o-- Codec2Buffer:clientBuffer
-InputEntry o-- C2Buffer:compBuffer
+LinearInputBuffers o--- InputFlexBuffersImpl:mImpl
+InputFlexBuffersImpl o--- InputEntry:mBuffers[]
+InputEntry o--- Codec2Buffer:clientBuffer
+InputEntry o--- C2Buffer1D:compBuffer
 Codec2Buffer <|-- LinearBlockBuffer
-LinearBlockBuffer o-- C2WriteView:mWriteView
-LinearBlockBuffer o-- C2LinearBlock:mBlock
-LinearBlockBuffer ..> C2Buffer:asC2Buffer()
+LinearBlockBuffer o--- C2WriteView:mWriteView
+LinearBlockBuffer o--- C2LinearBlock:mBlock
+LinearBlockBuffer ..> C2Buffer1D:asC2Buffer()
 C2Block1D <|-- C2LinearBlock
-C2Block1D o-- C2Block1DImpl:mImpl
+C2Block1D o--- C2Block1DImpl:mImpl
 
 ' CCodecBuffers <|-- OutputBuffers
+' OutputBuffers <|-- OutputBuffersArray
+' OutputBuffersArray o--- BuffersArrayImpl:mImpl
 OutputBuffers <|-- FlexOutputBuffers
 FlexOutputBuffers <|-- GraphicOutputBuffers
-CCodecBufferChannel o-- Output:mOutput
-Output o-- OutputBuffers:buffers
-FlexOutputBuffers o-- FlexBuffersImpl:mImpl
-FlexBuffersImpl o-- OutputEntry:mBuffers[]
-OutputEntry o-- DummyCodec2Buffer:clientBuffer
+CCodecBufferChannel o--- Output:mOutput
+Output o--- OutputBuffers:buffers
+FlexOutputBuffers o--- FlexBuffersImpl:mImpl
+FlexBuffersImpl o--- OutputEntry:mBuffers[]
+OutputEntry o--- DummyCodec2Buffer:clientBuffer
 DummyCodec2Buffer <|-- DummyContainerBuffer
-MediaCodecBuffer <|-- DummyCodec2Buffer
+OutputMediaCodecBuffer <|-- DummyCodec2Buffer
+DummyContainerBuffer o--- C2Buffer2D:mBufferRef
 
-C2Buffer o-- C2BufferImpl:mImpl
-C2BufferImpl o-- BufferDataBuddy:mData
-C2BufferData <|-- BufferDataBuddy
-C2BufferData o-- C2BufferDataImpl:mImpl
-C2BufferDataImpl o-- C2ConstLinearBlock:mLinearBlocks
+C2Buffer1D o--- C2BufferImpl1D:mImpl
+C2BufferImpl1D o--- BufferDataBuddy1D:mData
+C2BufferData1D <|-- BufferDataBuddy1D
+C2BufferData1D o--- C2BufferDataImpl1D:mImpl
+
+C2Buffer2D o--- C2BufferImpl2D:mImpl
+C2BufferImpl2D o--- BufferDataBuddy2D:mData
+C2BufferData2D <|-- BufferDataBuddy2D
+C2BufferData2D o--- C2BufferDataImpl2D:mImpl
+
+C2BufferDataImpl1D o--- C2ConstLinearBlock:mLinearBlocks[]
 ConstC2Block1D <|-- C2ConstLinearBlock
 ConstC2Block1D o.. C2Block1DImpl:mImpl
-C2ConstLinearBlock o-- C2ReadView:mReadView
-C2ReadView o-- C2ReadViewImpl:mImpl
+C2ConstLinearBlock o--- C2ReadView:mReadView
+C2ConstLinearBlock o--- C2Fence1D:mFence
+C2Fence1D o--- C2FenceImpl1D:mImpl
+C2FenceImpl1D ..> Fence1DHandle:createNativeHandle()
+C2ReadView o--- C2ReadViewImpl:mImpl
 _C2MappedBlock1DImpl <|-- C2ReadViewImpl
-_C2MappedBlock1DImpl o-- DATA2:mData
+_C2MappedBlock1DImpl o--- DATA2:mData
 
-C2WriteView o-- C2WriteViewImpl:mImpl
+C2WriteView o--- C2WriteViewImpl:mImpl
 _C2MappedBlock1DImpl <|-- C2WriteViewImpl
 
 _C2Block1DImpl <|-- _C2MappedBlock1DImpl
-_C2Block1DImpl o-- C2LinearAllocation:mAllocation
-_C2Block1DImpl o-- _C2BlockPoolData:mPoolData
+_C2Block1DImpl o--- C2LinearAllocation:mAllocation
+_C2Block1DImpl o--- _C2BlockPoolData:mPoolData
 
 ' NuPlayer ..> NuPlayer:**kWhatScanSources**
 ' NuPlayer ..> DecoderBase:**kWhatConfigure**
@@ -289,42 +446,46 @@ _C2Block1DImpl o-- _C2BlockPoolData:mPoolData
 ' MediaCodec ..> CCodec:**kWhatStart**
 
 _C2BlockPoolData <|-- C2PooledBlockPoolData
-C2PooledBlockPoolData o-- BufferPoolData:mData
-BufferPoolClient o-- BufferCache:mCache
-BufferCache o-- ClientBuffer:mBuffers<BufferId,>
+C2PooledBlockPoolData o--- BufferPoolData:mData
+BufferPoolClient o--- BufferCache:mCache
+BufferCache o--- ClientBuffer:mBuffers<BufferId,>
 BufferPoolClientImpl ..> ClientBuffer:CREATE
 _C2BufferPoolAllocator ..> BufferPoolAllocation:allocate()
-AccessorImpl o-- BufferPool:mmBufferPool
-BufferPool o-- InternalBuffer:mBuffers<BufferId,>
-InternalBuffer o-- BufferPoolAllocation:mAllocation
-BufferPoolAllocation o-- native_handle_t:mHandle
+AccessorImpl o--- BufferPool:mmBufferPool
+BufferPool o--- InternalBuffer:mBuffers<BufferId,>
+InternalBuffer o--- BufferPoolAllocation:mAllocation
+BufferPoolAllocation o--- native_handle_t:mHandle
 ClientBuffer o.. native_handle_t:mHandle
-C2PooledBlockPoolImpl o-- _C2BufferPoolAllocator:mAllocator
-_C2BufferPoolAllocator o-- C2Allocator:mAllocator
+C2PooledBlockPoolImpl o--- _C2BufferPoolAllocator:mAllocator
+_C2BufferPoolAllocator o--- C2Allocator:mAllocator
 C2Allocator <|-- C2AllocatorIon
 native_handle_t <|-- C2HandleIon
 C2LinearAllocation <|-- C2AllocationIon
-C2AllocationIon o-- C2AllocationIonImpl:mImpl
+C2AllocationIon o--- C2AllocationIonImpl:mImpl
 C2AllocationIonImpl <|-- C2AllocationIonImplV2
 C2AllocationIonImpl o.. IonFd:mIonFd
-C2AllocatorIon o-- IonFd:mIonFd
+C2AllocatorIon o--- IonFd:mIonFd
 C2AllocatorIon ..> C2AllocationIon:priorLinearAllocation()
-C2AllocationIonImpl o-- ImplC2HandleIon:mHandle
-C2HandleIon o-- BufferFd:mFds
+C2AllocationIonImpl o--- ImplC2HandleIon:mHandle
+C2HandleIon o--- BufferFd:mFds
 ImplC2HandleIon o.. BufferFd:mFds
 MAPDATA <.. C2AllocationIon:ion_map()
 _C2MappedBlock1DImpl o.. MAPDATA:mData
 C2BlockPool .[#blue].> C2LinearBlock:fetchLinearBlock()
-MediaCodec o-- BufferInfo:mPortBuffers[]
-BufferInfo o-- MediaCodecBuffer:mData
-Decoder o-- MediaCodecBuffer:mInputBuffers
+MediaCodec o--- BufferInfo:mPortBuffers[]
+BufferInfo o--- MediaCodecBuffer:mData
+Decoder o--- MediaCodecBuffer:mInputBuffers
+Decoder o--- OutputMediaCodecBuffer:mOutputBuffers
+OutputBufferInfo o--- OutputMediaCodecBuffer:mData
+MediaCodec o--- OutputBufferInfo:mPortBuffers[]
 
 BufferPoolData ..> ClientBuffer:INDEX
 
 C2Work *-- C2FrameData:input
-C2FrameData o-- C2Buffer:buffers[]
-C2Work o-- C2Worklet:worklets
-C2Worklet o-- OutputFrame:output
-OutputFrame o-- C2Buffer:buffers[]
+C2FrameData o--- C2Buffer1D:buffers[]
+C2Work o--- C2Worklet:worklets
+C2Worklet o--- OutputFrame:output
+OutputFrame o--- C2Buffer2D:buffers[]
+
 
 @enduml
