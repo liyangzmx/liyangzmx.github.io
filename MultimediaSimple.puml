@@ -1,0 +1,320 @@
+@startuml MS
+
+skinparam {
+    ' monochrome true
+    ClassBorderColor transparent
+    ClassBackgroundColor transparent
+    PackageBorderColor transparent
+    PackageBackgroundColor whitesmoke
+    ' Shadowing true
+    Linetype ortho
+    ' Linetype polyline
+}
+
+' left to right direction
+
+hide empty members
+hide circle
+set namespaceSeparator none
+
+package "media.extractor" as extractor <<Rectangle>> {
+    class "IMemory" as extractor.IMemory
+    MediaBuffer o-- extractor.IMemory:mMemory
+
+    MEPG4Source --|> MediaTrackHelper
+    MediaTrackHelper o-- CMediaTrack:wrapper
+    CMediaTrack --|> MediaTrack
+    MediaTrack --o RemoteMediaSource
+    class "IMediaSource" as extractor.IMediaSource
+    RemoteMediaSource --|> extractor.IMediaSource
+
+    MEPG4Source o-- MediaBufferGroupHelper:mBufferGroup
+    MediaBufferGroupHelper o-- CMediaBufferGroup:mGroup
+    MediaBufferGroup --o CMediaBufferGroup:handle
+    MediaBufferGroup o-- InternalData:internalData
+    InternalData o-- MediaBuffer:mBuffers[]
+
+    MPEGExtractor o-- DataSourceHelper:mDataSource
+    DataSourceHelper o-- CDataSource:mSource
+    CDataSource o-- extractor.DataSource:handle
+    class "TinyCacheSource" as extractor.TinyCacheSource
+    extractor.DataSource <|-- extractor.TinyCacheSource
+    class "DataSource" as extractor.DataSource2
+    extractor.TinyCacheSource o-- extractor.DataSource2:mSource
+    class "CallbackDataSource" as extractor.CallbackDataSource
+    extractor.DataSource2 <|-- extractor.CallbackDataSource
+    class "IDataSource" as extractor.IDataSource
+    extractor.CallbackDataSource o-- extractor.IDataSource:mIDataSource
+    MPEGExtractor <.. MediaTrackHelper:getTrack()
+}
+
+package mediaserver <<Rectangle>> {
+    NuPlayer o-- Renderer:mAudioSink
+    Renderer o-- AudioSink:mAudioSink
+    AudioSink <|-- AudioOutput
+    AudioOutput o-- AudioTrack:mTrack
+    AudioTrack o-- IAudioTrack:mAudioTrack
+
+    NuPlayer o-- GenericSource:mSource
+    class "DataSource" as DataSource
+    GenericSource o-- mediaserver.DataSource
+    class "TinyCacheSource" as mediaserver.TinyCacheSource
+    mediaserver.DataSource <|-- mediaserver.TinyCacheSource
+    class "DataSource" as mediaserver.DataSource2
+    mediaserver.TinyCacheSource o-- mediaserver.DataSource2
+    class "CallbackDataSource" as mediaserver.CallbackDataSource
+    mediaserver.DataSource2 <|-- mediaserver.CallbackDataSource
+    mediaserver.CallbackDataSource o-- extractor.IDataSource
+
+    class "Track" as mediaserver.Track
+    GenericSource o-- mediaserver.Track
+    mediaserver.Track o-- extractor.IMediaSource
+
+    NuPlayer o-- DecoderBase:mVideoDecoder
+    DecoderBase <|-- Decoder
+    Decoder o-- MediaCodec:mCodec[]
+    MediaCodec o-- CodecBase:mCodec
+    CodecBase <|-- CCodec
+    CCodec o-- CCodecBufferChannel:mChannel
+
+    CCodecBufferChannel o-- BlockPools:mBlockPool
+    BlockPools o-- C2BlockPool:inputPool
+    C2BlockPool o-- C2PooledBlockPool::Impl:mImpl
+    C2BlockPool <|-- C2BasicLinearBlockPool
+    C2PooledBlockPool::Impl o-- ClientManager:mBufferPoolManager
+    class "ClientManager::Impl" as ClientManagerImpl
+    ClientManager o-- ClientManagerImpl:mImpl
+    ClientManagerImpl o-- BufferPoolClient:mClients<,>
+    class "BufferPoolClient::Impl" as BufferPoolClientImpl
+    BufferPoolClient o-- BufferPoolClientImpl
+
+    CCodecBufferChannel o-- Input:mInput
+    Input o-- InputBuffers:buffers
+    InputBuffers <|-- LinearInputBuffers
+    InputBuffers o-- C2BlockPool:mPool
+    LinearInputBuffers o-- FlexBuffersImpl:mImpl
+    class "Entry" as inputEntry
+    FlexBuffersImpl o-- inputEntry:mBuffers[]
+    class "Codec2Buffer" as inputCodec2Buffer
+    inputCodec2Buffer <|-- LinearBlockBuffer
+    LinearBlockBuffer o-- C2LinearBlock:mBlock
+    C2LinearBlock --|> C2Block1D
+    class "C2Block1D::Impl" as C2Block1DImpl
+    C2Block1D o-- C2Block1DImpl:mImpl
+    C2Block1DImpl --|> _C2Block1DImpl
+    _C2Block1DImpl o-- C2LinearAllocatoin:mAllocation
+    ' C2LinearAllocatoin <|-- C2AllocationIon
+    class "C2AllocationIon::Impl" as mediaserver.C2AllocationIonImpl
+    C2AllocationIon o-- mediaserver.C2AllocationIonImpl:mImpl
+    mediaserver.C2AllocationIonImpl ..> C2WriteView
+    class "uint8_t" as mediaserver.DATA
+    C2WriteView .> mediaserver.DATA
+    class "uint8_t" as oriDATA
+    class "ABuffer" as mediaserver.ABuffer
+    mediaserver.ABuffer o-- oriDATA:mData
+    oriDATA .> mediaserver.DATA: COPY
+    inputEntry o-- inputCodec2Buffer:clientBuffer
+    class "MediaCodecBuffer" as inputMediaCodecBuffer
+    inputCodec2Buffer --|> inputMediaCodecBuffer
+    extractor.IMemory .[#blue].> mediaserver.ABuffer:<font color=blue>**mediaBufferToAbuffer()**</font>
+    inputMediaCodecBuffer o-- mediaserver.ABuffer:mBuffer
+
+    C2AllocationIon --|> C2Allocator
+    _C2BufferPollAllocator o-- C2Allocator:mAllocator
+    BufferPoolClientImpl o-- _C2BufferPollAllocator:mAllocator
+    BufferPoolClientImpl o-- Connection:mLocalConnection
+    Connection o-- Accessor:mAccessor
+    class "Accessor::Impl" as AccessorImpl
+    Accessor o-- AccessorImpl:mImpl
+    AccessorImpl o-- BufferPoolAllocator:mAllocator
+    BufferPoolAllocator <|-- _C2BufferPollAllocator
+
+    CCodecBufferChannel o-- Output:mOutput
+    Output o-- OutputBuffers:buffers
+    OutputBuffers <|-- OutputBuffersArray
+    OutputBuffersArray o-- BuffersArrayImpl:mImpl
+    class "Entry" as audioEntry
+    BuffersArrayImpl o-- audioEntry:mBuffers[]
+    class "Codec2Buffer" as audioCodec2Buffer
+    audioEntry o-- audioCodec2Buffer:clientBuffer
+    class "MediaCodecBuffer" as audioMediaCodecBuffer
+    audioCodec2Buffer --> audioMediaCodecBuffer
+    audioCodec2Buffer ..> C2Buffer:asC2Buffer()
+    class "C2FrameData" as mediaserver.C2FrameData
+    mediaserver.C2FrameData o-- C2Buffer:buffers[]
+    class "C2Work" as mediaserver.C2Work
+    mediaserver.C2Work o-- mediaserver.C2FrameData:output
+    class "C2Buffer::Impl" as C2BufferImpl
+    C2Buffer o-- C2BufferImpl:mImpl
+    C2BufferImpl o-- BufferDataBuddy:mData
+    BufferDataBuddy --|> C2BufferData
+    class "C2BufferData::Impl" as C2BufferDataImpl
+    C2BufferData o-- C2BufferDataImpl:mImpl
+    C2BufferDataImpl o-- C2ConstLinearBlock:mLinearBlocks[]
+    class "C2Block1D" as audioC2Block1D
+    C2ConstLinearBlock --|>audioC2Block1D
+    class "C2Block1D::Impl" as audioC2Block1DImpl
+    audioC2Block1D o-- audioC2Block1DImpl:mImpl
+    class "_C2Block1DImpl" as audio_C2Block1DImpl
+    audioC2Block1DImpl --|> audio_C2Block1DImpl
+    class "C2LinearAllocatoin" as audioC2LinearAllocatoin
+    audio_C2Block1DImpl o-- audioC2LinearAllocatoin:mAllocation
+    class "C2AllocationIon" as audioC2AllocationIon
+    audioC2LinearAllocatoin <|-- audioC2AllocationIon
+    class "C2AllocationIon::Impl" as audioC2AllocationIonImpl
+    audioC2LinearAllocatoin o-- audioC2AllocationIonImpl:mImpl
+    audioC2AllocationIonImpl ..> C2ReadView:data
+    class "uint8_t" as audioData
+    C2ReadView ..> audioData:data
+    class "ABuffer" as audioOutputABuffer
+    audioMediaCodecBuffer o-- audioOutputABuffer:mBuffer
+    class "uint8_t" as audioOutputData
+    audioOutputABuffer o-- audioOutputData:mData
+    audioData ..> audioOutputData:copy
+    audioOutputData ..> AudioTrack:write
+
+    C2BufferDataImpl o-- C2GraphicBlock:mGraphicBlocks[]
+    C2GraphicBlock --|> C2Block2D
+    class "C2Block2D::Impl" as C2Block2DImpl
+    C2Block2D o-- C2Block2DImpl:mImpl
+    C2Block2DImpl --|> _C2Block2DImpl
+    _C2Block2DImpl o-- _C2BlockPoolData:mData
+    class "GraphicBuffer" as mediaserver.GraphicBuffer
+    _C2BlockPoolData ..> mediaserver.GraphicBuffer:createGraphicBuffer()
+    mediaserver.GraphicBuffer ..> IGraphicBufferProducer:queueBuffer()
+    IGraphicBufferProducer .[#Blue].> mediaserver.GraphicBuffer:dequeueBuffer()
+
+    CCodecBufferChannel o-- Component:mComponent
+    Component o-- OutputBufferQueue
+    OutputBufferQueue o-- _C2BlockPoolData:mPoolDatas[]
+    OutputBufferQueue o-- mediaserver.GraphicBuffer:mBuffers[]
+    OutputBufferQueue o-- IGraphicBufferProducer
+}
+
+package "media.swcodec" as swcodec <<Rectangle>> {
+    mediaserver.C2Work .[#blue]> C2Work:<font color=blue>**HIDL**</font>
+    ' class "C2AllocationIon::Impl" as swcodecC2AllocationIonImpl
+    ' mediaserver.C2AllocationIonImpl ..> swcodecC2AllocationIonImpl:HIDL
+    class "void *" as swcodecInputData
+    mediaserver.DATA .[#blue].> swcodecInputData:<font color=blue>**ION**</font>
+    ' swcodecC2AllocationIonImpl ... swcodecInputData:map()
+    _C2MappedBlock1DImpl o-- swcodecInputData:mData
+    class "C2ReadView::Impl" as C2ReadViewImpl
+    C2ReadViewImpl --|> _C2MappedBlock1DImpl
+    class "C2ReadView" as swcodecC2ReadView
+    C2Work ..> swcodecC2ReadView:buffers[0]->data().linearBlocks().front().map().get()
+    swcodecC2ReadView o-- C2ReadViewImpl:mImpl
+    swcodecC2ReadView ..> SimpleC2Component:INPUT
+    C2SoftAvcDec --|> SimpleC2Component
+    C2SoftAacDec --|> SimpleC2Component
+    class "BlockingBlockPool" as swcodec.BlockingBlockPool
+    SimpleC2Component o-- swcodec.BlockingBlockPool:mOutputBlockPool
+    class "C2LinearBlock" as swcodec.C2LinearBlock
+    swcodec.BlockingBlockPool ..> swcodec.C2LinearBlock:fetchLinearBlock
+    class "C2WriteView" as swcodec.C2WriteView
+    swcodec.C2LinearBlock ..> swcodec.C2WriteView:map().get()
+    C2SoftAacDec ..> swcodec.C2WriteView:**WRITE**
+    C2SoftAvcDec ..> Mapped:**WRITE**
+    C2AllocationGralloc o-- Mapped:mMapped
+    C2AllocationGralloc o-- hidl_handle:mHidlHandle
+    hidl_handle o-- native_handle_t:mHandle
+    class "GraphicBuffer" as swcodecGraphicBuffer
+    native_handle_t ..> swcodecGraphicBuffer
+    ' mediaserver.GraphicBuffer .[#Blue].> swcodecGraphicBuffer:HIDL(HardwareBuffer)
+    swcodecGraphicBuffer .[#blue]up.> mediaserver.GraphicBuffer:<font color=blue>**HIDL(HardwareBuffer)**</font>
+
+    class "C2Buffer" as swcodec.C2Buffer
+    swcodec.C2LinearBlock ..> swcodec.C2Buffer:C2Buffer::CreateLinearBuffer()
+    C2Work o-- C2Worklet:worklets[]
+    C2Worklet o-- C2FrameData:output
+    C2FrameData o-- swcodec.C2Buffer:buffers
+    class "C2Buffer::Impl" as swcodec.C2BufferImpl
+    swcodec.C2Buffer o-- swcodec.C2BufferImpl:mImpl
+    class "BufferDataBuddy" as swcodec.BufferDataBuddy
+    swcodec.C2BufferImpl .> swcodec.BufferDataBuddy:mData
+    class "C2BufferData" as swcodec.C2BufferData
+    swcodec.BufferDataBuddy --|> swcodec.C2BufferData
+    class "C2BufferData::Impl" as swcodec.C2BufferDataImpl
+    swcodec.C2BufferData o-- swcodec.C2BufferDataImpl:mImpl
+    class "C2ConstLinearBlock" as swcodec.C2ConstLinearBlock
+    swcodec.C2BufferDataImpl o-- swcodec.C2ConstLinearBlock:mLinearBlocck[]
+    swcodec.C2ConstLinearBlock .[#blue]> C2ConstLinearBlock:<font color=blue>**HIDL**</font>
+}
+
+package "android.gallery3d" as gallery <<Rectangle>> {
+    class "BnGraphicBufferProducer" as gallery.BnGraphicBufferProducer
+    BufferQueueProducer --|> gallery.BnGraphicBufferProducer
+    IGraphicBufferProducer <|-[#blue]- gallery.BnGraphicBufferProducer
+    BufferQueueProducer o-- IConsumerListener:mConsumerListener
+    ConsumerListener --|> IConsumerListener
+    ConsumerBase --|> ConsumerListener
+    ConsumerBase o-- FrameAvailiableListener
+    FrameAvailiableListener <|-- BLASBufferQueue
+    BLASBufferQueue -> Transaction:apply()
+    Transaction o-- ComposerState:mComposerState
+    ComposerState o-- layer_state_t:state
+    layer_state_t o-- IBinder:surface
+}
+
+package "surfaceflinger" as sf <<Rectangle>> {
+    class "BBinder" as sf.BBinder
+    sf.BBinder <|-- Handle
+    IBinder <|-[#blue]- sf.BBinder
+    Handle o-- Layer:owner
+    Layer <|-- BufferLayer
+    BufferLayer <|-- BufferStateLayer
+    BufferLayer o-- ExternalTexture:mBufferInfo.mBuffer
+    ExternalTexture o-- GraphicBuffer:buffer
+    SurfaceFlinger o-- Layer:mLayersPendingRefresh
+    SurfaceFlinger o-- DisplayDevice:mDisplays[]
+    DisplayDevice o-- impl::Display:mCompositionDisplay
+    impl::Display --|> impl::Output
+    impl::Output o-- RenderSurface:mRenderSurface
+    impl::Output o-- CE::OutputLayer:mCurrentOutputLayerOrdered
+    CE::OutputLayer <|-- OutputLayer
+    OutputLayer o-- Layer:mLayerFE
+    ' mediaserver.GraphicBuffer ..> GraphicBuffer
+    RenderSurface o-- DisplaySurface:mDisplaySurface
+    DisplaySurface <|-- FramebufferSurface
+    FramebufferSurface o-- Hwc2::Composer:mHwc
+    Hwc2::Composer <|-- impl::Composer
+
+    SurfaceFlinger --|> ComposerCallback
+    ComposerCallbackBridge o-- ComposerCallback:mCallback
+    ComposerCallbackBridge --|> IComposerCallback
+}
+
+package audioserver <<Rectangle>> {
+    TrackHandle -up[#blue]-|> IAudioTrack
+    class "Track" as audioserver.Track
+    TrackHandle o-- audioserver.Track:mTrack
+    Thread-->audioserver.Track:mTracks[]
+    ThreadBase --|> Thread
+    PlaybackThread --|> ThreadBase
+    StreamOutHalHidl --|> StreamHalHidl
+    StreamHalHidl --|> StreamOutHalInterface
+    AudioStreamOut o-- StreamOutHalInterface:stream
+    MixerThead o-- AudioStreamOut:mOutput
+    MixerThead --|> PlaybackThread
+    StreamHalHidl o-- IStreamOut:mStream
+
+    AudioStreamOut o-- AudioHwDevice:mAudioHwDevs[]
+    AudioHwDevice o-- DeviceHalInterface:mHwDevice
+    DeviceHalInterface <|-- DeviceHalHidl
+    DeviceHalHidl o-- IDevice:mDevice
+
+    AudioFlinger o-- PlaybackThread:mPlaybackThread[]
+
+    ThreadBase o-- EffectChain:mEffectChains[]
+    EffectChain o-- EffectModule:mEffects
+    EffectModule o-- EffectHalInterface:mEffectInterface
+    EffectHalInterface <.. EffectsFactorHalInterface:createEffect()
+}
+
+package "android.hardware.audio.service" as audiohal <<Rectangle>> {
+    IStreamOut <|-[#blue]- StreamOut
+    StreamOut o-- audio_stream_out_t:mStream
+    StreamOut o-- Device:mDevice
+    Device o-- audio_hw_device_t:mDevice
+    Device -[#blue]-|> IDevice
+}

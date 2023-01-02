@@ -95,10 +95,21 @@ package "<font size=40>USBAudio</font>" {
     class audio_stream_out
     class audio_stream
     class audio_device
+    class hw_device_t
     class audio_hw_device
     class audio_module
     class hw_module_methods_t
     class hw_module_t
+    class audio_device
+    class stream_in
+    class alsa_device_info
+    class alsa_device_profile
+    class alsa_device_proxy
+    class pcm_config
+    class pcm
+    class audio_stream_in
+    class "pcm_config" as inconfig
+    class "audio_stream" as instream
 }
 
 package "<font size=40>USB</font>" {
@@ -433,5 +444,20 @@ SharedRegionParcelable o.. unique_fd:mFd
 AAudioService ...> AAudioServiceStreamMMAP:CREATE
 AAudioServiceStreamMMAP ...> AudioEndpointParcelable2:getAudioDataDescription_l()
 AudioEndpointParcelable2 ...> AudioEndpointParcelable:BINDER
+
+stream_in o-- alsa_device_info:alsa_devices[]
+alsa_device_info *-- alsa_device_proxy:proxy
+alsa_device_info *-- alsa_device_profile:profile
+alsa_device_proxy o-- alsa_device_profile:profile
+alsa_device_proxy o-- pcm_config:alsa_config
+alsa_device_proxy o-- pcm:pcm
+audio_device o-- stream_in:input_stream_list[]
+stream_out o-- alsa_device_info:alsa_devices[]
+stream_in *-- inconfig:config
+stream_out *-- pcm_config:config
+stream_in *-- audio_stream_in:stream
+audio_stream_in *-- instream:common
+audio_hw_device *-- hw_device_t:common
+hw_device_t o-- hw_module_t:module
 
 @enduml

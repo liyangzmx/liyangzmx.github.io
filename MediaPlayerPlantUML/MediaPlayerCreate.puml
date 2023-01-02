@@ -1,0 +1,60 @@
+@startuml MediaPlayerCreate
+
+skinparam {
+    ' monochrome true
+    ClassBorderColor white
+    ClassBackgroundColor white
+    Shadowing false
+    NoteFontColor #Black
+    NoteFontSize 16
+    NoteTextAlignment left
+    NoteBackgroundColor WhiteSmoke
+    NoteColor transparent
+    NoteBorderThickness 0
+    NoteBorderColor transparent
+    NoteBorderThickness 0
+    ' Linetype ortho
+    ' Linetype polyline
+}
+
+package MediaCodec {
+    class "<font color=red>MediaPlayer(Java)</font>" as MediaPlayerJava
+    class "MediaPlayer(C++)" as MediaPlayer
+    class IMediaPlayerClient
+    class JNIMediaPlayerListener
+    class MediaPlayerListener
+    interface IMediaPlayerClient
+}
+package MediaPlayerService {
+    class MediaPlayerService
+    class "MediaPlayerService::Client" as Client
+    interface IMediaPlayer
+    class MediaPlayerBase
+    class MediaPlayerInterface
+    class NuPlayerDriver
+    class NuPlayer
+    class "MediaPlayerBase::Listener" as MediaPlayerBaseListener
+    class "MediaPlayerService::Client::Listener" as ClientListener
+}
+
+MediaPlayerJava o-- MediaPlayer:mNativeContext
+MediaPlayer o.. IMediaPlayer:mPlayer
+IMediaPlayerClient <|-- MediaPlayer
+MediaPlayer o-- MediaPlayerListener:mListener
+MediaPlayerListener <|-- JNIMediaPlayerListener
+JNIMediaPlayerListener ..> MediaPlayerJava:postEventFromNative()
+IMediaPlayer <|-- Client
+MediaPlayerService o-- Client:mClients[]
+Client o-- MediaPlayerBase:mPlayer
+' Client o-- MediaPlayerService:mService
+Client o.. IMediaPlayerClient:mClient
+MediaPlayerBase <|-- MediaPlayerInterface
+MediaPlayerInterface <|-- NuPlayerDriver
+NuPlayerDriver o-- NuPlayer:mPlayer
+NuPlayer o-- NuPlayerDriver:mDriver
+MediaPlayerBase o-- MediaPlayerBaseListener:mListener
+MediaPlayerBaseListener <|-- ClientListener
+ClientListener o-- Client:mClient
+
+
+@enduml

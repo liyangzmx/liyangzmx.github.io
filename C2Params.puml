@@ -1,0 +1,83 @@
+@startuml MS
+
+skinparam {
+    ' monochrome true
+    ClassBorderColor transparent
+    ClassBackgroundColor transparent
+    PackageBorderColor transparent
+    PackageBackgroundColor whitesmoke
+    ' Shadowing true
+    ' Linetype ortho
+    ' Linetype polyline
+}
+
+' left to right direction
+
+hide empty members
+hide circle
+set namespaceSeparator none
+
+Field o-- FieldHelper:_mHelper
+Field *-- C2ParamField:_mField
+C2ParamField *-- Index:_mIndex
+C2ParamField *-- _C2FieldId:_mFieldId
+
+FieldHelper *-- ParamRef:mParam
+FieldHelper *-- _C2FieldId:mFiledId
+class "uint32_t" as mOffset
+_C2FieldId *-- mOffset:_mOffset
+class "uint32_t" as mSize
+_C2FieldId *-- mSize:_mSize
+class "C2FieldSupportedValues" as mPossible
+class "C2FieldSupportedValues" as mSupported
+mSupported *-- type_t:type
+mSupported *-- struct:range
+class "Primitive" as min
+class "Primitive" as max
+class "Primitive" as step
+class "Primitive" as num
+class "Primitive" as denom
+struct *-- min:min
+struct *-- max:max
+struct *-- step:step
+struct *-- num:num
+struct *-- denom:denom
+FieldHelper o-- mPossible:mPossible
+FieldHelper o-- mSupported:mSupported
+ParamRef o-- C2Param:_mRef
+C2Param *-- Index:_mIndex
+Index --|> Type
+Type --|> CoreIndex
+CoreIndex *-- uint32_t:mIndex
+' class "ParamHelper" as builderParamHelper
+' ParamBuilder --|> builderParamHelper
+
+class "ParamHelper::Impl" as ParamHelperImpl
+ParamHelperImpl o-- ParamRef:mParam
+ParamHelper o-- ParamHelperImpl:mImpl
+ParamBuilder ..> ParamHelper:**BUILD**
+
+BaseParams --|> C2InterfaceHelper
+C2InterfaceHelper o-- C2ReflectorHelper:mReflector
+C2InterfaceHelper o-- FactoryImpl:_mFactory
+FactoryImpl o-- ParamRef:mParams<*,>
+FactoryImpl o-- ParamHelper:mParams<,*>
+
+SimpleC2Interface --|> C2ComponentInterface
+SimpleC2Interface o-- C2SoftAacEnc::IntfImpl
+C2SoftAacEnc::IntfImpl --|> BaseParams
+SimpleC2Component o-- C2ComponentInterface:mIntf
+SimpleC2Component --|> C2Component
+C2SoftAacDec --|> SimpleC2Component
+class "ParamRef" as mDependenciesAsRefs
+' ParamHelperImpl o-- mDependenciesAsRefs:mDependenciesAsRefs
+
+FactoryImpl o-- Index:_mDependencyIndex<*,>
+FactoryImpl --|> Factory
+Factory ..> Param:get()
+Param o-- ParamHelper:_mHelper
+
+C2ParamFieldValues *-- C2ParamField:paramOrField
+C2ParamFieldValues o-- mPossible:values
+
+ParamHelperImpl o-- FieldHelper:mFields<,*>

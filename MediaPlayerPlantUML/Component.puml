@@ -1,0 +1,203 @@
+@startuml Component
+
+skinparam {
+    ' monochrome true
+    ClassBorderColor white
+    ClassBackgroundColor white
+    Shadowing false
+    NoteFontColor #Black
+    NoteFontSize 16
+    NoteTextAlignment left
+    NoteBackgroundColor WhiteSmoke
+    NoteColor transparent
+    NoteBorderThickness 0
+    NoteBorderColor transparent
+    NoteBorderThickness 0
+    ' Linetype ortho
+    ' Linetype polyline
+}
+
+package C2ComponentInterface <<rectangle>> {
+    interface C2ComponentInterface
+    class "SimpleC2Interface<IntfImpl>" as ImplInterface
+}
+class "C2PlatformComponentStore::ComponentModule" as ComponentModule
+
+package IComponentStore <<rectangle>> {
+    interface IComponentStore
+    class ComponentStore
+    class C2PlatformComponentStore
+}
+
+package IComponent <<rectangle>> {
+    interface IComponent
+    class Component
+}
+
+package IComponentInterface <<rectangle>> {
+    interface IComponentInterface
+    class ComponentInterface
+}
+class "C2Component::Traits" as Traits
+package Factory <<rectangle>> {
+    class "C2InterfaceHelper::Factory" as Factory
+    class "C2InterfaceHelper::FactoryImpl" as FactoryImpl
+}
+class "ParamHelper" as Params
+class "ParamHelper" as Helper
+
+class "C2InterfaceHelper::ParamHelper::Impl" as ParamsImpl
+class "C2Param" as DefaultParam
+
+package C2ParamReflector <<rectangle>> {
+    class C2ParamReflector
+    class C2ReflectorHelper
+}
+
+package IConfigurable <<rectangle>> {
+    interface IConfigurable
+    class CachedConfigurable
+}
+
+package C2ComponentFactory <<rectangle>> {
+    interface C2ComponentFactory
+    class C2SoftVpxFactory
+}
+
+package C2Component <<rectangle>> {
+    class C2Component
+    class SimpleC2Component
+    class C2SoftVpxDec
+}
+
+package CCodec {
+    class CCodec
+    class CCodecBufferChannel
+    class Codec2Client
+    interface IInputSink
+    class "Component::Sink" as Sink
+    package Listener <<rectangle>> {
+        class "Codec2Client::Listener" as Listener
+        class "CCodec::ClientListener" as ClientListener
+    }
+    package Codec2Client::Component <<rectangle>> {
+        class "Codec2Client::Component" as Codec2ClientComponent
+        class Codec2ConfigurableClient
+        class "Codec2Client::Interface" as Codec2ClientInterface
+    }
+    package IComponentListener <<rectangle>> {
+        interface IComponentListener
+        class "Codec2Client::Component::HidlListener" as HidlListener
+    }
+}
+
+package ConfigurableC2Intf <<rectangle>> {
+    interface ConfigurableC2Intf
+    class CompIntf
+}
+
+package C2InterfaceHelper <<rectangle>> {
+    class C2InterfaceHelper
+    class "SimpleC2Interface<void>::BaseParams" as BaseParams
+    class "C2SoftVpxDec::IntfImpl" as IntfImpl
+}
+
+package ParamBuilder <<rectangle>> {
+    class ParamHelper
+    class ParamBuilder
+}
+
+' package C2ComponentKindSetting {
+'     class "C2Component::kind_t" as kind_t
+'     class C2ComponentKindSetting
+' }
+' package C2ComponentDomainSetting {
+'     class "C2Component::domain_t" as domain_t
+'     class C2ComponentDomainSetting
+' }
+
+' C2Param <|-- C2Setting
+' C2SimpleValueStruct o--- kind_t:value
+' C2SimpleValueStruct <|-- C2ComponentKindSetting
+' C2Setting <|-- C2ComponentKindSetting
+' C2SimpleValueStruct o--- domain_t:value
+' C2SimpleValueStruct <|-- C2ComponentDomainSetting
+' C2Setting <|-- C2ComponentDomainSetting
+
+FactoryImpl o--- C2ParamReflector:_mReflector
+FactoryImpl o-- Params:_mParams<ParamRef,>
+FactoryImpl o-- Helper:_mIndexToHelper<Index,>
+Params o--- ParamsImpl:mImpl
+ParamsImpl *-- ParamRef:mParam
+ParamsImpl o--- DefaultParam:mDefaultValue
+ParamRef o--- C2Param:_mRef
+' ComponentInterface ..> C2Param:**query_vb**
+Factory <|-- FactoryImpl
+C2InterfaceHelper o--- FactoryImpl:_mFactory
+C2InterfaceHelper <|-- BaseParams
+BaseParams <|-- IntfImpl
+C2SoftVpxDec o--- IntfImpl:mImpl
+SimpleC2Component o--- C2ComponentInterface:mIntf
+C2ComponentInterface <|-- ImplInterface
+ImplInterface o--- IntfImpl:mImpl
+
+IntfImpl ..> ParamBuilder:DefineParam()
+ParamHelper <|-- ParamBuilder
+Params <.. ParamHelper:FactoryImpl::addParam()
+
+C2ComponentFactory <|-- C2SoftVpxFactory
+C2SoftVpxFactory o--- C2ReflectorHelper:mHelper
+C2ParamReflector <|-- C2ReflectorHelper
+C2Component <|-- SimpleC2Component
+SimpleC2Component <|-- C2SoftVpxDec
+
+C2SoftVpxFactory ..> C2SoftVpxDec:createComponent()
+C2SoftVpxFactory ..> C2ComponentInterface:createInterface
+ComponentModule o--- C2ComponentFactory:mC2ComponentFactory
+
+IComponentStore <|-- ComponentStore
+ComponentStore <|-- C2PlatformComponentStore
+C2PlatformComponentStore o--- ComponentLoader:mComponents<C2String,>
+ComponentLoader ..> ComponentModule:fetchModule()
+ComponentModule o--- Traits:mTraits
+ComponentInterface ..> Traits:FillTraitsFromInterface()
+
+IComponent <|-- Component
+Component o--- C2Component:mComponent
+Component o--- ComponentInterface:mInterface
+ComponentInterface o--- C2ComponentInterface:mInterface
+IComponentInterface <|-- ComponentInterface
+C2PlatformComponentStore o--- C2ReflectorHelper:mReflector
+
+IComponentInterface ..> IConfigurable:getConfigurable
+Component o--- IComponentInterface:mInterface
+IConfigurable <|-- CachedConfigurable
+CachedConfigurable o--- ConfigurableC2Intf:mIntf
+ComponentInterface o--- CachedConfigurable:mConfigurable
+ConfigurableC2Intf <|-- CompIntf
+CompIntf o--- C2ComponentInterface:mIntf
+
+IComponentListener <|-- HidlListener
+IInputSink <|-- Sink
+Sink o.. IConfigurable:mConfigurable
+Codec2ClientComponent o.. IComponent:mBase1_2
+HidlListener o.. Codec2ClientComponent:component
+Component o.. IComponentListener:mListener
+HidlListener o.. Listener:base
+Listener <|-- ClientListener
+Codec2Client o.. IComponentStore:mBase1_2
+
+CCodecBufferChannel o--- Codec2ClientComponent:mComponent
+CCodec o--- ClientListener:mClientListener
+CCodec o--- CCodecBufferChannel:mChannel
+
+IComponentStore ..> IComponent:createComponent()
+Codec2Client ..> Codec2ClientComponent:CREATE
+Codec2Client ..> Codec2ClientInterface:CREATE
+Codec2ClientInterface --|> Codec2ConfigurableClient
+Codec2ClientComponent --|> Codec2ConfigurableClient
+Codec2ConfigurableClient o.. IConfigurable:mBase
+Codec2ClientInterface o.. IComponentInterface:mBase
+CCodec o-- Codec2Client:mClient
+
+@enduml

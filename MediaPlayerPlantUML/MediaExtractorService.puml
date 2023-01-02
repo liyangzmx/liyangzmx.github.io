@@ -1,0 +1,154 @@
+@startuml MediaExtracotrService
+
+skinparam {
+    ' monochrome true
+    ClassBorderColor white
+    ClassBackgroundColor white
+    Shadowing false
+    NoteFontColor #Black
+    NoteFontSize 16
+    NoteTextAlignment left
+    NoteBackgroundColor WhiteSmoke
+    NoteColor transparent
+    NoteBorderThickness 0
+    NoteBorderColor transparent
+    NoteBorderThickness 0
+    ' Linetype ortho
+    ' Linetype polyline
+}
+
+package MediaPlayerService {
+    class NuPlayer
+    class "NuPlayer::Source" as NuPlayerSource
+    class "NuPlayer::GenericSource" as GenericSource
+    class "DataSource" as DataSource2
+    class DataSource
+    class TinyCacheSource
+    class CallbackDataSource
+    class "Track" as Track
+    ' class "MediaBuffer" as BpMediaBuffer
+    ' class RemoteMediaBufferWrapper
+    class ABuffer
+    class AnotherPacketSource
+    ' class "void *" as ExtractorData
+    class "IMemory" as ExtractorMemory
+}
+
+' class "int" as FD
+
+package MediaExtractorService {
+    interface IMediaExtractorService
+    class MediaExtractorService
+    class CMediaExtractor
+    class MediaExtractorFactory
+    class ExtractorPlugin
+    class ExtractorDef
+    class SnifferFunc
+    class MediaExtractorCUnwrapper
+    class MediaExtractor
+    class RemoteMediaExtractor
+    interface IMediaExtractor
+    class RemoteMediaSource
+    interface "IMediaSource" as VideoMediaSource
+    class MediaTrack
+    class CMediaTrack
+    class MediaTrackCUnwrapper
+    interface IDataSource
+    class RemoteDataSource
+    class "DataSource" as FileDataSource
+    class FileSource
+    class "CallbackDataSource" as MECallbackDataSource
+    class "TinyCacheSource" as METinyCacheSource
+    class "DataSource" as TinyDataSource
+    class DataSourceHelper
+    class CDataSource
+    class MediaExtractorPluginHelper
+    class MediaTrackHelper
+    class MPEG4Source
+    class MPEG4Extractor
+    class MediaBufferHelper
+    class CMediaBuffer
+    class MediaBufferBase
+    class MediaBufferGroup
+    class MediaBufferGroupHelper
+    class CMediaBufferGroup
+    class MediaBuffer
+    class IMemory
+    class InternalData
+    class "void *" as DATA
+}
+
+' GenericSource ..> IMediaExtractor:MediaExtractorFactory::Create()
+IMediaExtractorService ..> IMediaExtractor:makeExtractor()
+IMediaExtractorService ..> IDataSource:makeIDataSource()
+IMediaExtractor ..> VideoMediaSource:getTrack()
+NuPlayer ..> IMediaExtractorService:makeIDataSource()
+' MPEG4Extractor ..> MPEG4Source:getTrack()
+
+MECallbackDataSource o.[#blue]. IDataSource:mIDataSource
+METinyCacheSource o-[#blue]- MECallbackDataSource:mSource
+
+NuPlayer o-- NuPlayerSource:mSource
+NuPlayerSource <|-- GenericSource
+GenericSource o-- DataSource:mDataSource
+DataSource <|-- TinyCacheSource
+TinyCacheSource o-- DataSource2
+DataSource2 <|-- CallbackDataSource
+CallbackDataSource o.. IDataSource:mIDataSource
+IDataSource <|-[#blue]- RemoteDataSource
+RemoteDataSource o-[#blue]- FileDataSource:mSource
+FileDataSource <|-[#blue]- FileSource
+' FileSource o-- FD:mFd
+IMediaExtractorService <|-- MediaExtractorService
+MediaExtractorService ..> MediaExtractorFactory:CreateFromService()
+MediaExtractorFactory o-- ExtractorPlugin:gPlugins[]
+ExtractorPlugin *-- ExtractorDef:def
+ExtractorDef o-- SnifferFunc:u.v3.sniff
+MediaExtractorPluginHelper <|-- MPEG4Extractor
+DataSourceHelper o-[#blue]- CDataSource:mSource
+MPEG4Extractor o-- DataSourceHelper:mDataSource
+CMediaExtractor o-- MediaExtractorPluginHelper:data
+TinyDataSource <|-[#blue]- METinyCacheSource
+CDataSource o-[#blue]- TinyDataSource:data
+SnifferFunc ..> MPEG4Extractor:SNIFF
+MediaExtractorCUnwrapper o-- CMediaExtractor:plugin
+MediaExtractor <|-- MediaExtractorCUnwrapper
+RemoteMediaExtractor o-- MediaExtractor:mExtractor
+IMediaExtractor <|-- RemoteMediaExtractor
+
+MediaTrackHelper <|-[#blue]- MPEG4Source
+CMediaTrack o-[#blue]- MediaTrackHelper:data
+MediaTrackCUnwrapper o-[#blue]- CMediaTrack:wrapper
+MediaTrack <|-[#blue]- MediaTrackCUnwrapper
+RemoteMediaSource o-- RemoteMediaExtractor:mExtractor
+RemoteMediaSource o-[#blue]- MediaTrack:mTrack
+VideoMediaSource <|-[#blue]- RemoteMediaSource
+
+GenericSource o-[#blue]- Track:mVideoTrack
+Track o-[#blue]- VideoMediaSource:mSource
+MediaTrackHelper o-- MediaBufferGroupHelper:mBufferGroup
+MediaTrackCUnwrapper ..> MediaBufferGroup:NEW(start())
+CMediaBufferGroup o-- MediaBufferGroup:handle
+MediaBufferGroupHelper o-- CMediaBufferGroup:mGroup
+MediaBufferGroup o-- InternalData:mInternal
+InternalData o-- MediaBufferBase:mBuffers[]
+CMediaBuffer o-[#red]- MediaBufferBase:handle
+MediaBufferHelper o-[#red]- CMediaBuffer:mBuffer
+MediaBufferBase <|-[#red]- MediaBuffer
+MediaBuffer o-- DATA:mData
+IMemory .[#red].> DATA:unsecurePointer()
+MediaBuffer o-[#red]- IMemory:mMemory
+
+' BpMediaBuffer <|-- RemoteMediaBufferWrapper
+' RemoteMediaSource o-- MediaBufferGroup:mGroup
+' BpMediaBuffer o.. ExtractorMemory:mMemory
+MPEG4Source o-[#red]- MediaBufferHelper:mBuffer
+' ABuffer o-- ExtractorData:mData
+ABuffer <.[#red]. ExtractorMemory:mediaBufferToABuffer()
+IMemory .[#red].> ExtractorMemory:BINDER
+' ExtractorMemory ..> ExtractorData:mData
+Track o-[#red]- AnotherPacketSource:mPackets
+AnotherPacketSource o-[#red]- ABuffer:mBuffers
+MPEG4Source o-[#blue]- DataSourceHelper:mDataSource
+
+@enduml

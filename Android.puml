@@ -1,0 +1,41 @@
+@startuml Android
+
+skinparam {
+    monochrome true
+    ClassBorderColor white
+    ClassBackgroundColor white
+    Shadowing false
+}
+
+hide empty members
+set namespaceSeparator none
+
+interface DataSource
+interface "DataSource" as DataSource2
+interface BnMediaSource
+class "void *" as VOID
+
+GenericSource o-- DataSource:mSource
+DataSource <|-- TinyCacheSource
+TinyCacheSource o-- DataSource2
+DataSource2 <|-- CallbackDataSource
+CallbackDataSource o-- IMediaSource
+IMediaSource <|-- BnMediaSource
+BnMediaSource <|-- RemoteMediaSource
+RemoteMediaSource o-- MediaTrack:mTrack
+MediaTrack <|-- CMediaTrack
+MediaTrackHelper o-- CMediaTrack:wrapper
+MEPG4Source o-- MediaTrackHelper
+MEPG4Source o-- MediaBufferGroupHelper
+MediaBufferGroupHelper o-- CMediaBufferGroup:mGroup
+CMediaBufferGroup o-- MediaBufferGroup
+MediaBufferGroup o-- InternalData:internalData
+InternalData o-- MediaBuffer:mBuffers[]
+MediaBuffer o-- IMemory:mMemory
+IMemory o-- ABuffer:mData
+ABuffer o-- VOID
+C2WriteView ..> VOID
+C2AllocationIon::Impl ..> C2WriteView
+ion_map --> C2AllocationIon::Impl
+
+@enduml

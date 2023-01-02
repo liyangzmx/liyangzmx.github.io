@@ -1,0 +1,45 @@
+# Getting Start
+这是一篇链接笔记
+
+# 知名镜像站点
+* [清华大学开源软件镜像站](https://mirrors.tuna.tsinghua.edu.cn)
+* [Another infinity](https://mirrors.ustc.edu.cn)
+
+# Ubuntu
+## X86 ISO
+* https://mirrors.ustc.edu.cn/ubuntu-releases/
+* https://mirrors.ustc.edu.cn/ubuntu-releases/
+* https://developer.aliyun.com/mirror/
+## ARM64 ISO
+* https://mirrors.ustc.edu.cn/ubuntu-cdimage/releases/
+* …
+
+## 源
+* [Ubuntu 镜像使用帮助 - TUNA](https://mirrors.tuna.tsinghua.edu.cn/help/git-repo/)
+* [Ubuntu 源使用帮助 - USTC](https://mirrors.ustc.edu.cn/help/ubuntu.html)
+* [Ubuntu 镜像 - 阿里云](https://developer.aliyun.com/mirror/ubuntu?spm=a2c6h.13651102.0.0.3e221b11djhd2b)
+
+# Tools
+## SCM
+### Git
+* [Git Book (在线)](https://git-scm.com/book/zh/v2)
+* [Pro Git (PDF)](https://github.com/progit/progit2-zh/releases/download/2.1.62/progit.pdf)
+
+### Repo
+* [repo - README.md](https://gerrit.googlesource.com/git-repo/+/HEAD/README.md)
+* [Git Repo 镜像使用帮助](https://mirrors.tuna.tsinghua.edu.cn/help/git-repo/)
+
+### Jenkins
+* [Jenkins 用户手册](https://www.jenkins.io/zh/doc/)
+
+### Gerrit
+* [Gerrit Code Review for Git](https://gerrit-review.googlesource.com/Documentation/)
+
+### Github
+* [GitHub 漫游指南](https://github.phodal.com/#/chapter/Github漫游指南)
+
+# Android
+## 系统
+* [开始进行 Android 开发](https://source.android.com/docs/setup)
+* [Android Code Search](https://cs.android.com/android/platform/superproject)
+* [AOSPXRef](http://aospxref.com)
