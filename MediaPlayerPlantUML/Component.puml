@@ -70,25 +70,21 @@ package C2Component <<rectangle>> {
     class C2SoftVpxDec
 }
 
-package CCodec {
-    class CCodec
-    class CCodecBufferChannel
-    class Codec2Client
-    interface IInputSink
-    class "Component::Sink" as Sink
-    package Listener <<rectangle>> {
-        class "Codec2Client::Listener" as Listener
-        class "CCodec::ClientListener" as ClientListener
-    }
-    package Codec2Client::Component <<rectangle>> {
-        class "Codec2Client::Component" as Codec2ClientComponent
-        class Codec2ConfigurableClient
-        class "Codec2Client::Interface" as Codec2ClientInterface
-    }
-    package IComponentListener <<rectangle>> {
-        interface IComponentListener
-        class "Codec2Client::Component::HidlListener" as HidlListener
-    }
+class Codec2Client
+interface IInputSink
+class "Component::Sink" as Sink
+package Listener <<rectangle>> {
+    class "Codec2Client::Listener" as Listener
+    class "CCodec::ClientListener" as ClientListener
+}
+package Codec2Client::Component <<rectangle>> {
+    class "Codec2Client::Component" as Codec2ClientComponent
+    class Codec2ConfigurableClient
+    class "Codec2Client::Interface" as Codec2ClientInterface
+}
+package IComponentListener <<rectangle>> {
+    interface IComponentListener
+    class "Codec2Client::Component::HidlListener" as HidlListener
 }
 
 package ConfigurableC2Intf <<rectangle>> {
