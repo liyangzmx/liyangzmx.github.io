@@ -7,7 +7,7 @@
 ## 准备工作
 在 macOS 上需要安装 bindgen:
 ```shell
-brew install bingen
+brew install bindgen
 ```
 
 ## 首先准备一个基础项目:
@@ -70,7 +70,7 @@ project(jsonlrn VERSION 0.1.0 LANGUAGES C)
 add_library(jsonlrn src/json_lrn.c)
 ```
 
-变异产生酷文件:
+编译产生库文件:
 ```shell
 mdkir build
 
