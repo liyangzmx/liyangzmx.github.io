@@ -186,11 +186,11 @@ service vendor.foo-default-rust /vendor/bin/hw/foo-rust-service
 推送测试(假设文件系统已经`remount`):
 ```
 adb remount
-adb push /opt/work/xr_box_rk/out/target/product/rk3588_xrbox/system/bin/hw/foo_service /system/bin/hw/
-adb push /opt/work/xr_box_rk/out/target/product/rk3588_xrbox/system/lib64/libfoo_rs.dylib.so /system/lib64/
-adb push /opt/work/xr_box_rk/out/target/product/rk3588_xrbox/system/lib64/libandroid_hardware_foo_V1.dylib.so /system/lib64/
-adb push /opt/work/xr_box_rk/external/rust/foo-server/foo-default-rust.xml /vendor/etc/vintf/manifest/andorid.hardware.foo.xml
-adb push /opt/work/xr_box_rk/out/compatibility_matrix.device.xml2 /etc/vintf/compatibility_matrix.device.xml
+adb push /opt/work/out/target/product/rk3588_xrbox/system/bin/hw/foo_service /system/bin/hw/
+adb push /opt/work/out/target/product/rk3588_xrbox/system/lib64/libfoo_rs.dylib.so /system/lib64/
+adb push /opt/work/out/target/product/rk3588_xrbox/system/lib64/libandroid_hardware_foo_V1.dylib.so /system/lib64/
+adb push /opt/work/external/rust/foo-server/foo-default-rust.xml /vendor/etc/vintf/manifest/andorid.hardware.foo.xml
+adb push /opt/work/out/compatibility_matrix.device.xml2 /etc/vintf/compatibility_matrix.device.xml
 adb reboot
 ```
 一个`adb shell`执行: `/system/bin/hw/foo_service`
